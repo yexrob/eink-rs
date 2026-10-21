@@ -1,8 +1,8 @@
 # Ink UI 移植：结构、主题与分工
 
 - 日期：2026-10-21
-- 状态：实施中
-- 提交：无
+- 状态：已实施
+- 提交：`26e4b2b` feat: add the crate skeleton with palette and theme lookup；`0288616` docs: add the worker briefs for the Ink UI port；`2eae235` feat(ui): port Ink UI's display components；`f276743` feat(ui): port Ink UI's inputs；`6f7dc4c` feat(ui): port Ink UI's Select and MultiSelect
 - Brief：[inkui-display](briefs/inkui-display.md)、[inkui-inputs](briefs/inkui-inputs.md)、[inkui-select](briefs/inkui-select.md)
 
 ## 背景
@@ -52,3 +52,21 @@ Ink UI 2.0.0 的调研结论见 ink-rs 的 [056](https://github.com/yexrob/ink-r
   - [inkui-select](briefs/inkui-select.md)：Select、MultiSelect，Ink UI 测试 23 个。
   - 每个 worker 跑自己的测试文件、fmt、clippy、`cargo doc`，不跑全量。
 - **集成（主 agent）**：合并补丁和 `src/ui/mod.rs`，review，跑全量，更新 `docs/design.md` 和 README，补本记录的结果。
+
+## 结果
+
+三个 Codex 按 brief 完成，测试共 113 个：Ink UI 的 103 个，加 Spinner 换帧 1 个、输入框 5 个、Select 4 个。主 agent 集成后跑了全量 `cargo test`、fmt、clippy `--all-targets -D warnings` 和 `cargo doc -D warnings`，都通过。
+
+review 发现的问题和处理：
+
+- **UnorderedList**：OrderedList 跳过 `None` 转成的空子节点，UnorderedList 却给它画了标记。主 agent 改成两者都跳过。`docs/design.md` 的列表规则同步改了。
+- **输入框的状态 hook**：worker 给 TextInput、EmailInput、PasswordInput 各加了一个只转调 `use_input_state` 的 hook。按「如非必要，勿增实体」删掉，三个组件直接用 `use_input_state`。
+- **`highlight_text`**：worker 写成 `Option<String>`，调用处要写 `.highlight_text(Some("l".into()))`。改成 `String`，空串不高亮，和 `placeholder` 一致。
+
+worker 在 brief 留给它的地方做的选择：
+
+- 输入框加了共用的 `InputTheme`（光标反色、占位符和补全变暗、掩码字符），ConfirmInput 的两个提示放进 `ConfirmInputTheme`。
+- Select 的导航状态里存一份选项。选项变短时，layout effect 重置之前的那次渲染还拿着旧窗口，存一份避免越界。
+- `SelectTheme` 和 `MultiSelectTheme` 用一个私有宏生成，字段、默认值和行样式转换共用。
+
+worker 报告的 ink-rs 行为：ink-rs 把一次读到的字节作为一块交给 `use_input`，`"\r\r"` 是一段文本，不是两次 Enter；连续按 Enter 的字节如果一次读到，TextInput 会把它们当文本插入。测试里改用方向键序列隔开按键。要不要在 ink-rs 里按键拆分，另开记录和用户讨论。

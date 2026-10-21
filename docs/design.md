@@ -17,11 +17,11 @@ eink-rs 建在 [ink-rs](https://github.com/yexrob/ink-rs) 上，有两部分：
 
 ### 三层
 
-每个组件一个模块，公开三样：
+每个组件一个模块，最多公开三样：
 
-- **状态 hook**：`use_x_state(cx, ..)`，不含按键绑定和渲染。状态更新写成纯函数。回调在按键处理里调用，参数取这次更新后的值。
+- **状态 hook**：有状态的组件公开 `use_x_state(cx, ..)`，不含按键绑定和渲染。状态更新写成纯函数，用 `State::get` 和 `State::set` 应用。回调在按键处理里调用，参数取这次更新后的值。三个文本输入框共用 `use_input_state` 和 `reduce_input`；Select、MultiSelect 各有 `use_select_state`、`use_multi_select_state`；Spinner 公开 `use_spinner`。ConfirmInput 和其余展示组件没有状态。
 - **组件**：props 结构体派生 `Props`，渲染函数私有。交互组件有 `is_disabled`，为 false 时用 `use_input` 读键。焦点交给应用：用 `use_focus` 算出 `is_disabled`。
-- **主题**：`XTheme` 结构体，字段是颜色、字符、样式开关和间距，实现 `From<&Palette>`。布局结构（方向、图标不收缩）写在组件里，不进主题。
+- **主题**：`XTheme` 结构体，字段是颜色、字符、样式开关和间距，实现 `From<&Palette>`。布局结构（方向、图标不收缩）写在组件里，不进主题。三个文本输入框共用 `InputTheme`（光标、占位符、补全的样式和掩码字符）；`SelectTheme` 和 `MultiSelectTheme` 字段相同，类型分开，可以分别 provide。
 
 ### 主题
 
@@ -51,9 +51,22 @@ Ink UI 的主题是一组函数，返回任意 Box/Text 属性，用 deepmerge �
 
 ### 和 Ink UI 不同的地方
 
-- **列表**：Rust 写不出 `OrderedList.Item`，也不按类型识别子节点。列表的每个子节点算一项，编号按子节点计数。一项里放多个元素时用 `View` 包起来，嵌套列表写在这个 `View` 里。
+- **列表**：Rust 写不出 `OrderedList.Item`，也不按类型识别子节点。列表的每个子节点算一项，`None` 转成的空元素不算，编号也跳过它。一项里放多个元素时用 `View` 包起来，嵌套列表写在这个 `View` 里。
 - **图标**：用 Unicode 字符（✔ ✘ ⚠ ℹ ❯ ─），不做 figures 的非 Unicode 回退。
+- **Select**：选项是 `SelectOption<T>`，值是泛型。焦点记下标，值为空串或重复时导航照常。`highlight_text` 是 `String`，空串不高亮。
+- **Spinner**：只带 cli-spinners 的 `dots`，其他动画用 `SpinnerFrames::new` 传帧和间隔。
+
+移植时改掉的 Ink UI 行为：
+
+- 回调在按键处理里调用。Ink UI 在 effect 里比较前后值，回调或选项换了引用会用同一个值再调一次。
+- 输入框的光标按字素移动；Backspace 在开头什么也不删；Enter 有补全时把补全接在值的末尾，显示和提交的值一致；按住 Ctrl 或 Meta 的键不插入字符。
+- Select 在空列表上按 Enter 保留默认值；选项变化在 layout effect 里重置，不画出旧状态的帧。
+- Spinner 换帧后从第一帧开始。
+- ProgressBar 的值为 NaN 时按 0 算。
+- StatusMessage 和 Alert 按 Ink UI 标成 `test.failing` 的测试实现。
 
 ### 测试
 
-`tests/` 下每个组件一个文件，移植 Ink UI 的测试。组件用 `ink_rs::testing::render` 渲染，期望值是 ink-rs 的元素树，用 `tests/support` 的 `frame` 按同样的设置（100 列、基本色）渲染，比较带颜色的帧。修掉的 Ink UI bug 各有一个测试。
+`tests/` 下每个组件一个文件，移植 Ink UI 的测试。组件用 `ink_rs::testing::render` 渲染，期望值是 ink-rs 的元素树，用 `tests/support` 的 `frame` 按同样的设置（100 列、基本色）渲染，比较带颜色的帧。期望和 Ink UI 不同的地方有注释；改掉的行为里 Ink UI 测试没覆盖的，各加一个测试。
+
+ink-rs 把一次读到的字节作为一块交给 `use_input`，`"\r\r"` 是一段文本，不是两次 Enter。测试里一次发多个键时，用方向键的转义序列隔开。

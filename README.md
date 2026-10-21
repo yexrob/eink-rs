@@ -6,7 +6,7 @@ the Rust port of [Ink](https://github.com/vadimdemedes/ink).
 - **`eink_rs::ui`** ports the components of
   [Ink UI](https://github.com/vadimdemedes/ink-ui): text, email, password and
   confirm inputs, select and multi-select, spinner, progress bar, badge, status
-  message, alert, and ordered and unordered lists. In progress.
+  message, alert, and ordered and unordered lists.
 - **`eink_rs::cli`** will be a CLI framework modeled on
   [Pastel](https://github.com/vadimdemedes/pastel): commands declared as clap
   types, each rendered by a component. Planned.
