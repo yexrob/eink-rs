@@ -3,7 +3,7 @@
 - 日期：2026-10-21
 - 状态：实施中
 - 提交：`c373a3b` feat(router): add a typed in-app router
-- Brief：[router-core](briefs/router-core.md)
+- Brief：[router-core](briefs/router-core.md)、[router-files](briefs/router-files.md)
 
 ## 背景
 
@@ -50,7 +50,17 @@ Claude 按这些选择拼出完整方案发给用户，还剩一问：页面怎�
 ## 方案
 
 1. 派一个 Codex，独立 worktree，brief 见 [router-core](briefs/router-core.md)：`router` 模块、`#[derive(Routes)]`、`RouteArgs`、`tests/router.rs`、`examples/router.rs`。只跑 brief 里列出的测试。
-2. 第二个 Codex 在第一个合入后派出：`routes!`、删除 `commands!`、示例。brief 那时再写，并补进本记录。动手前先核对 rust-analyzer 对宏生成的 `#[path]` 的支持。
+2. 第二个 Codex 在第一个合入后派出，brief 见 [router-files](briefs/router-files.md)：`routes!`、删除 `commands!` 和 `examples/cli-routes`、新示例包 `examples/file-routes`。
+   - 先核对了 `#[path]`：scratch 里一个 proc macro 生成 `#[path = "[pair]"] pub mod pair { pub mod index; pub mod book; }`，rustc 能编译，rust-analyzer 1.96 能加载 `[pair]/` 下的文件并报出其中故意写错的类型（E0308）。
+   - 细节由 Claude 定（授权同上）：
+     - 每层的 enum 叫 `Route`，子路由字段叫 `route`，所以 `[route]/` 报错。
+     - `[pair]/` 的 newtype `Pair(pub String)` 生成在 `pair` 模块里，`[pair]/` 下的页面用 `super::Pair`。
+     - `_layout.rs` 的模块叫 `_layout`，类型叫 `Layout`。
+     - 根目录的 `index.rs` 允许。
+     - 一层最多一个动态目录：两个时，后一个永远匹配不到。
+     - `index/` 目录报错，避免和 `index.rs` 混淆。
+     - 扫描、命名和 `OUT_DIR` 检查从 `fs_commands.rs` 改造成 `fs_routes.rs`。
+     - `docs/design.md` 和 README 由主 agent 写。
 3. 主 agent 负责：
    - 每步 review 后合入，跑全量测试；
    - 写 `docs/design.md` 的 router 一节和 README；
