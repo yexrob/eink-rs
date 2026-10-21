@@ -13,6 +13,15 @@ the Rust port of [Ink](https://github.com/vadimdemedes/ink).
 
 eink-rs is not published on crates.io yet.
 
+## Examples
+
+`examples/` ports Ink UI 2.0.0's 17 examples under the same names
+(theming examples use the `theming-` prefix):
+
+```sh
+cargo run --example select
+```
+
 ## License
 
 Licensed under either of [Apache License, Version 2.0](LICENSE-APACHE) or
