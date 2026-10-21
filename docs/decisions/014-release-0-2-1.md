@@ -1,8 +1,8 @@
 # 发布 0.2.1
 
 - 日期：2026-10-21
-- 状态：实施中
-- 提交：无
+- 状态：已实施
+- 提交：`141e0af` chore: release 0.2.1
 - Brief：无，主 agent 自己做
 
 ## 背景
@@ -25,3 +25,9 @@
 2. 本地 fmt、clippy、无 feature 和 `--workspace --all-features` 的测试、`cargo doc`；`cargo package -p eink-rs` 检查打包的文件和编译。
 3. 推送 main，等 CI。
 4. 打 `v0.2.1` 标签并推送，`cargo publish -p eink-rs`。
+
+## 结果
+
+- 本地全量：`--workspace --all-features` 134 个、无 feature 113 个测试通过；fmt（含 `routes!` 下的文件）、clippy、`cargo doc` 通过。`cargo package -p eink-rs` 的文件表有 65 个文件，不含 `docs/`、`examples/file-routes/` 和 `examples/ship/`，打包编译通过。
+- main 推送到 `141e0af`，CI run 39574895693 的 4 个 job 通过。
+- `v0.2.1` 标签推送；eink-rs 0.2.1 发布到 crates.io，依赖 eink-rs-macros 0.2.0。
