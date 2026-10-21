@@ -1,8 +1,8 @@
 # 编码助手示例 `quill`
 
 - 日期：2026-10-21
-- 状态：实施中
-- 提交：无
+- 状态：已实施
+- 提交：`bf8aab8` feat(examples): add the quill coding assistant；`224c28c` fix(examples): indent multi-line user messages in quill；`bdba70b` docs: describe the quill example
 - Brief：[quill-demo](briefs/quill-demo.md)
 
 ## 背景
@@ -57,3 +57,17 @@ Claude 按这些发了方案，用户答「可以」，又问用 eink 还是 ink
 1. 主 agent：本记录、brief 和 README 索引行先提交。
 2. 派一个 Codex，worktree 基于 main，brief 见 [quill-demo](briefs/quill-demo.md)。它只跑 `quill` 包的测试和 brief 里列出的命令，不跑交互界面。
 3. 主 agent 集成：review，合入，fmt、clippy、全量测试；README 和 `docs/design.md` 提到 `examples/quill/`；在 tmux 里走一遍全部剧本、弹出列表和命令给用户看；补本记录的结果；删 worktree。
+
+## 结果
+
+- Codex 按 brief 写完 `examples/quill/`：`agent.rs`（接口和事件）、`script.rs`（模拟实现）、`session.rs`（把事件归入历史、进行中的命令、排队和用量）、`composer.rs`、`cells.rs`、`markdown.rs`、`lib.rs`、`main.rs` 和 2 个测试。brief 列出的命令全部通过。
+- 主 agent review 后改了：
+  - 写文件原先建模成一条 `apply patch` 命令，后面再跟一个 Edited 单元，同一处改动出现两次。改为 `Action::{Run, Edit}`：编辑走自己的审批（「Would you like to make the following edits?」，附 diff，「不再问」按文件记）；refactor 剧本的 `apply patch … && cargo check` 拆成两次编辑和一条 `cargo check`。
+  - 快捷键面板的开关在输入框和外层各存一份，改为外层一份，经 props 传给输入框。
+  - 交互测试用 `mount` 时，为拿到整帧要清屏、改尺寸再推进；改用 `render_with` 的 `last_frame()`，它含累计的 `Static` 行和当前的帧。
+  - 输入框和用户消息的续行与 `› ` 对齐（在 tmux 里发现）。
+- 全量：fmt、clippy 通过，`--workspace --all-features` 136 个测试通过。
+- tmux 窗口 `ink-rs:quill` 里走了一遍：信息卡；`/` 列表的过滤、Tab 补全和 `/status`；`?` 快捷键；`@` 文件补全；Ctrl-J 多行；explain 剧本的 Markdown；fix 剧本的命令和编辑审批，`a` 记住 `cargo test` 后第二次不再问；忙时排队，上一轮结束后发出；Esc 中断；`/diff`；`/model`；上键回溯；Ctrl-C 清空输入，空闲时两次退出，留下用量和 resume 提示。`exec` 的各剧本、`exec fail` 和 `-m nope` 的退出码 1 在管道里验证。
+- 观察到的限制，没有改：
+  - eink-rs 的 `InputState.cursor` 是字素下标，没有取字节偏移的方法；`quill` 的输入框用 `reduce_input` 逐个删除求光标前的前缀。别的应用也需要时，可以给 `InputState` 加这个方法。
+  - ink-rs 的 `use_animation` 重新激活时时间归零，剧本和计时都依赖同一个时钟，`quill` 的时钟一直开着，空闲时每 100 ms 重绘一次。
