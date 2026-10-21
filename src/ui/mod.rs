@@ -7,6 +7,20 @@
 //!
 //! A component reads its theme with [`use_theme`].
 
+mod alert;
+mod badge;
+mod ordered_list;
+mod progress_bar;
+mod spinner;
+mod status_message;
 mod theme;
+mod unordered_list;
 
+pub use alert::{Alert, AlertTheme};
+pub use badge::{Badge, BadgeTheme};
+pub use ordered_list::{OrderedList, OrderedListTheme};
+pub use progress_bar::{ProgressBar, ProgressBarTheme};
+pub use spinner::{Spinner, SpinnerFrames, SpinnerTheme, use_spinner};
+pub use status_message::{StatusMessage, StatusMessageTheme, Variant};
 pub use theme::{Palette, use_theme};
+pub use unordered_list::{UnorderedList, UnorderedListTheme};
