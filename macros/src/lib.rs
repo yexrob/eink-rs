@@ -1,4 +1,4 @@
-//! Command dispatch and directory routing macros for eink-rs.
+//! Command dispatch and routing macros for eink-rs.
 
 #![forbid(unsafe_code)]
 
@@ -7,6 +7,21 @@ use syn::parse_macro_input;
 
 mod commands;
 mod fs_commands;
+mod routes;
+
+/// Generates typed path matching, formatting, and rendering for a route enum.
+///
+/// Each variant has one `#[route("/path/:param")]`, with an optional page type
+/// after the path. Named fields supply parameters and at most one child route.
+/// `#[layout(Type)]` wraps an enum or a variant with a child route.
+/// Tuple variants and generic enums are not supported.
+#[proc_macro_derive(Routes, attributes(route, layout))]
+pub fn derive_routes(input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as syn::DeriveInput);
+    routes::expand(input)
+        .unwrap_or_else(syn::Error::into_compile_error)
+        .into()
+}
 
 /// Generates `From<Enum> for ::ink_rs::Element` by converting each variant's field.
 ///

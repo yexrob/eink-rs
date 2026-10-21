@@ -8,4 +8,6 @@
 
 #[cfg(feature = "cli")]
 pub mod cli;
+#[cfg(feature = "router")]
+pub mod router;
 pub mod ui;

@@ -21,6 +21,7 @@ resolver = "3"
 [features]
 default = []
 cli = ["dep:clap", "dep:eink-rs-macros"]
+router = ["dep:eink-rs-macros"]
 completion = ["cli", "dep:clap_complete"]
 tokio = ["cli", "ink-rs/tokio"]
 
@@ -41,3 +42,7 @@ required-features = ["cli"]
 [[example]]
 name = "cli-async"
 required-features = ["tokio"]
+
+[[example]]
+name = "router"
+required-features = ["cli", "router"]
