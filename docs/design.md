@@ -69,7 +69,6 @@ Ink UI 的主题是一组函数，返回任意 Box/Text 属性，用 deepmerge �
 
 `tests/` 下每个组件一个文件，移植 Ink UI 的测试。组件用 `ink_rs::testing::render` 渲染，期望值是 ink-rs 的元素树，用 `tests/support` 的 `frame` 按同样的设置（100 列、基本色）渲染，比较带颜色的帧。期望和 Ink UI 不同的地方有注释；改掉的行为里 Ink UI 测试没覆盖的，各加一个测试。
 
-ink-rs 把一次读到的字节作为一块交给 `use_input`，`"\r\r"` 是一段文本，不是两次 Enter。测试里一次发多个键时，用方向键的转义序列隔开。
 
 ## cli
 
