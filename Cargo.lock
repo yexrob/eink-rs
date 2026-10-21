@@ -289,6 +289,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "ship"
+version = "0.1.0"
+dependencies = [
+ "eink-rs",
+ "ink-rs",
+]
+
+[[package]]
 name = "signal-hook"
 version = "0.3.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
