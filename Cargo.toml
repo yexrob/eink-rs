@@ -13,3 +13,4 @@ exclude = ["/docs", "/CLAUDE.md", "/AGENTS.md", "/.gitignore", "/.github"]
 
 [dependencies]
 ink-rs = { version = "0.1.2", default-features = false, features = ["macros"] }
+unicode-segmentation = "1"

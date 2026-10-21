@@ -9,18 +9,28 @@
 
 mod alert;
 mod badge;
+mod confirm_input;
+mod email_input;
+mod input;
 mod ordered_list;
+mod password_input;
 mod progress_bar;
 mod spinner;
 mod status_message;
+mod text_input;
 mod theme;
 mod unordered_list;
 
 pub use alert::{Alert, AlertTheme};
 pub use badge::{Badge, BadgeTheme};
+pub use confirm_input::{ConfirmChoice, ConfirmInput, ConfirmInputTheme};
+pub use email_input::EmailInput;
+pub use input::{InputAction, InputState, InputTheme, reduce_input, use_input_state};
 pub use ordered_list::{OrderedList, OrderedListTheme};
+pub use password_input::PasswordInput;
 pub use progress_bar::{ProgressBar, ProgressBarTheme};
 pub use spinner::{Spinner, SpinnerFrames, SpinnerTheme, use_spinner};
 pub use status_message::{StatusMessage, StatusMessageTheme, Variant};
+pub use text_input::TextInput;
 pub use theme::{Palette, use_theme};
 pub use unordered_list::{UnorderedList, UnorderedListTheme};
