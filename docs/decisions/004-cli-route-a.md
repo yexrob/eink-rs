@@ -1,8 +1,8 @@
 # CLI 框架：路由 A
 
 - 日期：2026-10-21
-- 状态：实施中
-- 提交：无
+- 状态：已实施
+- 提交：`0a0c646` feat(cli): render clap commands with components
 - Brief：[cli-route-a](briefs/cli-route-a.md)
 
 ## 背景
@@ -42,3 +42,19 @@ Pastel 4.0.1 在 commander 和 zod 上做了四件事：文件即命令、schema
 - 示例：`cli`（同步，演示命令、参数、嵌套组、别名、default、包裹和错误退出）和 `cli-async`（`use_future` 加 Spinner）。
 - 集成（主 agent）：review，跑全量和各 feature 组合，CI 改成 `--all-features` 并加无 feature 构建，`docs/design.md` 加 `cli` 一节，更新 README，在 tmux 里运行示例，补本记录的结果。
 - 路由 B 在 A 落地后另开记录。
+
+## 结果
+
+Codex 写了 `macros/` 的 `#[derive(Commands)]`、`src/cli/` 的入口和退出处理、`tests/cli.rs` 的四个测试和两个示例。brief 留给 worker 的一项：泛型 enum 报错，不支持。报告没有发现 ink-rs 的缺口。
+
+主 agent review 时把入口的参数泛型 `<C, I, T>` 改成 `impl Trait` 参数，调用写 `parse_from::<Cli>(..)`，不用写 `::<Cli, _, _>`。集成时无 feature、`--features cli`、`--workspace --all-features` 三种组合的测试都通过，clippy、doc、fmt 通过。CI 的 clippy 和测试改成 `--workspace --all-features`，加一步无 feature 的 `cargo build`。
+
+tmux 会话 `eink-rs` 里运行 `cli` 和 `cli-async`：
+
+- `--help` 列出 deploy、domains、fail，退出码 0；`--bogus` 是用法错误，退出码 2。
+- 不带命令时运行 default 命令，显示 `Deploy website to us`，外面有顶层组件包的 `Deployment console`；`deploy website --region eu` 和别名 `d website` 正常。
+- `domains list` 显示 `example.com`；`fail` 打印 `Error: deployment failed`，退出码 1。
+- 开 `completion` 后 `completions zsh` 输出以 `#compdef cli` 开头的脚本，退出码 0。
+- `cli-async` 显示 Spinner，等待结束后退出，退出码 0。
+
+路由 B 另开记录。
