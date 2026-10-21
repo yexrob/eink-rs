@@ -52,4 +52,5 @@
 | [008](008-release-0-1-0.md) | 2026-10-21 | 发布 0.1.0 | 已实施 |
 | [009](009-web3-demo.md) | 2026-10-21 | 用 eink-rs 改写 web3 demo，加 `cli::run_with` | 已实施 |
 | [010](010-router-research.md) | 2026-10-21 | 应用内路由调研 | 已实施 |
-| [011](011-router.md) | 2026-10-21 | 应用内路由：Router、`#[derive(Routes)]`、`routes!` | 实施中 |
+| [011](011-router.md) | 2026-10-21 | 应用内路由：Router、`#[derive(Routes)]`、`routes!` | 已实施 |
+| [012](012-release-0-2-0.md) | 2026-10-21 | 发布 0.2.0 | 实施中 |
