@@ -57,9 +57,10 @@ pub(crate) fn render(cell: &Cell) -> Element {
                 "Describe a task, or try /model, /status, /diff, /new",
             ))
             .into(),
-        Cell::User(message) => column()
+        Cell::User(message) => View::new()
             .background_color(Color::Ansi256(236))
-            .child(Text::new(format!("› {message}")))
+            .child(Text::new("› "))
+            .child(Text::new(message.as_str()))
             .into(),
         Cell::Message(message) => View::new()
             .child(Text::new("• "))
