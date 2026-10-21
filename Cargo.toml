@@ -11,6 +11,9 @@ keywords = ["tui", "terminal", "cli", "components", "ink"]
 categories = ["command-line-interface"]
 exclude = ["/docs", "/CLAUDE.md", "/AGENTS.md", "/.gitignore", "/.github"]
 
+[package.metadata.docs.rs]
+all-features = true
+
 [workspace]
 members = ["macros", "examples/cli-routes"]
 resolver = "3"

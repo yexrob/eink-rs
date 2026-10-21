@@ -14,13 +14,16 @@ the Rust port of [Ink](https://github.com/vadimdemedes/ink).
 
 | Feature | Enables |
 |---|---|
-| `cli` | `eink_rs::cli`, clap and `#[derive(Commands)]` |
+| `cli` | `eink_rs::cli`, clap, `#[derive(Commands)]` and `commands!` |
 | `completion` | `cli` plus a `completions <SHELL>` subcommand |
 | `tokio` | `cli` plus async entry points on ink-rs's tokio driver |
 
 No feature is on by default; `eink_rs::ui` needs none.
 
-eink-rs is not published on crates.io yet.
+```sh
+cargo add eink-rs                 # eink_rs::ui
+cargo add eink-rs --features cli  # plus eink_rs::cli
+```
 
 ## Examples
 
