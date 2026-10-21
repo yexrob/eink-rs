@@ -330,5 +330,8 @@ mod argv {
     fn subcommand_precedence() {
         let element = cli::parse_from::<Cli>(["app", "wallet"]).unwrap();
         assert_eq!(render(element).last_frame(), "wallet command");
+        let cli = Cli::try_parse_from(["app", "market", "wallet"]).unwrap();
+        assert!(cli.command.is_none());
+        assert_eq!(cli.route.route, "/market/wallet".parse().unwrap());
     }
 }

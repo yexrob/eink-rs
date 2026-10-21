@@ -28,7 +28,8 @@
 //! layouts shared by the old and new route keep their state.
 //!
 //! With `cli`, flatten `RouteArgs` into a clap parser to use argv words as the
-//! initial route's segments. Root subcommands take precedence over route words.
+//! initial route's segments. A root subcommand named by the first word takes
+//! precedence over the route.
 
 use std::any::type_name;
 use std::fmt;

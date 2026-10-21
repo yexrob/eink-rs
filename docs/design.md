@@ -128,7 +128,7 @@ Ink UI 的主题是一组函数，返回任意 Box/Text 属性，用 deepmerge �
 
 ### argv
 
-`cli` 和 `router` 都开时，`RouteArgs<R>` 可以 flatten 进根 `Parser`：每个位置参数是一个路径段，flag 可以夹在中间，没有词时是根 index。匹配不上时报 clap 的 `InvalidValue`，退出码 2。根上的子命令优先；这时 `route` 取根 index，所以有子命令时路由 enum 要有 index。clap 用新建的 `Command` 格式化这条报错，用法行显示包名，不是 argv[0]。
+`cli` 和 `router` 都开时，`RouteArgs<R>` 可以 flatten 进根 `Parser`：每个位置参数是一个路径段，flag 可以夹在中间，没有词时是根 index。匹配不上时报 clap 的 `InvalidValue`，退出码 2。clap 拿第一个词和紧跟 flag 的词去匹配根上的子命令，匹配上就执行子命令，这时 `route` 取根 index，所以有子命令时路由 enum 要有 index。其余的词即使和子命令同名也是路径段。clap 用新建的 `Command` 格式化这条报错，用法行显示包名，不是 argv[0]。
 
 ### 测试
 

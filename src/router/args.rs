@@ -7,8 +7,11 @@ use super::{RouteError, Routes};
 /// The positional `[ROUTE]...` takes each word as a path segment; flags may sit
 /// between the words. No words select the root index. An unmatched path
 /// produces an `InvalidValue` error.
-/// A root subcommand takes precedence; the flattened route then uses its index.
-/// The route type therefore needs an index when it shares a parser with subcommands.
+/// clap matches the first word, and a word right after a flag, against root
+/// subcommand names; a match runs that subcommand, and the flattened route then
+/// uses its index. The route type therefore needs an index when it shares a
+/// parser with subcommands. Other words are segments, even when they name a
+/// subcommand.
 #[derive(Clone, PartialEq)]
 pub struct RouteArgs<R: Routes> {
     /// The route selected by the positional arguments.
@@ -17,7 +20,7 @@ pub struct RouteArgs<R: Routes> {
 
 impl<R: Routes> Args for RouteArgs<R> {
     fn augment_args(command: Command) -> Command {
-        command.subcommand_precedence_over_arg(true).arg(
+        command.arg(
             Arg::new("route")
                 .value_name("ROUTE")
                 .num_args(0..)
