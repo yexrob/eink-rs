@@ -1,0 +1,16 @@
+[package]
+name = "eink-rs-macros"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+description = "Command dispatch derive for eink-rs"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/yexrob/eink-rs"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+syn = { version = "2", features = ["full"] }
+quote = "1"
+proc-macro2 = "1"

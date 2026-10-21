@@ -11,6 +11,30 @@ keywords = ["tui", "terminal", "cli", "components", "ink"]
 categories = ["command-line-interface"]
 exclude = ["/docs", "/CLAUDE.md", "/AGENTS.md", "/.gitignore", "/.github"]
 
+[workspace]
+members = ["macros"]
+resolver = "3"
+
+[features]
+default = []
+cli = ["dep:clap", "dep:eink-rs-macros"]
+completion = ["cli", "dep:clap_complete"]
+tokio = ["cli", "ink-rs/tokio"]
+
 [dependencies]
+clap = { version = "4", optional = true, features = ["derive"] }
+clap_complete = { version = "4", optional = true }
+eink-rs-macros = { version = "0.1.0", path = "macros", optional = true }
 ink-rs = { version = "0.1.2", default-features = false, features = ["macros"] }
 unicode-segmentation = "1"
+
+[dev-dependencies]
+tokio = { version = "1.54", default-features = false, features = ["rt", "time", "macros"] }
+
+[[example]]
+name = "cli"
+required-features = ["cli"]
+
+[[example]]
+name = "cli-async"
+required-features = ["tokio"]

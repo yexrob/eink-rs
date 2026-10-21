@@ -3,14 +3,14 @@
 eink-rs 建在 [ink-rs](https://github.com/yexrob/ink-rs) 上，有两部分：
 
 - `ui`：移植 Ink UI 2.0.0 的 13 个组件和 `useSpinner`。
-- `cli`：参照 Pastel 的 CLI 框架，在 Ink UI 移植之后设计，设计定下后在本文加一节。
+- `cli`：参照 Pastel 4.0.1 的 CLI 框架，命令用 clap 声明，由组件渲染。
 
 设计怎么来的见 [decisions/](decisions/README.md)。
 
 ## 结构
 
-- 一个 crate，根 package 是 `eink-rs`。proc macro 和 build.rs 用的库在 Rust 里要独立成 crate，需要时加成员：路由 A 要 derive 时加 `macros/`，做文件路由 B 时加 `build/`。
-- `ui` 只依赖 ink-rs。`cli` 放在 `cli` feature 下，依赖 clap；shell 补全放 `completion` feature；异步命令用 ink-rs 的 `tokio` feature。
+- workspace 的根 package 是 `eink-rs`。proc macro 和 build.rs 用的库在 Rust 里要独立成 crate：成员 `macros/`（`eink-rs-macros`）放 derive，做文件路由 B 时加 `build/`。
+- `ui` 只依赖 ink-rs。feature 默认都不开：`cli` 加 clap 和 derive，`completion` 加 clap_complete，`tokio` 加异步入口并开 ink-rs 的 `tokio`；后两个都带上 `cli`。只用组件的项目不编译 clap。
 - 依赖 crates.io 上的 ink-rs，关掉它的默认 feature，开 `macros`。缺的通用原语加进 ink-rs，不在这里绕过。
 
 ## ui
@@ -70,3 +70,24 @@ Ink UI 的主题是一组函数，返回任意 Box/Text 属性，用 deepmerge �
 `tests/` 下每个组件一个文件，移植 Ink UI 的测试。组件用 `ink_rs::testing::render` 渲染，期望值是 ink-rs 的元素树，用 `tests/support` 的 `frame` 按同样的设置（100 列、基本色）渲染，比较带颜色的帧。期望和 Ink UI 不同的地方有注释；改掉的行为里 Ink UI 测试没覆盖的，各加一个测试。
 
 ink-rs 把一次读到的字节作为一块交给 `use_input`，`"\r\r"` 是一段文本，不是两次 Enter。测试里一次发多个键时，用方向键的转义序列隔开。
+
+## cli
+
+参照 Pastel 4.0.1，只借概念：命令即组件、包裹、index 与 default 命令、别名。help 格式、`-v` 和 Pastel 的测试不对齐。这是路由 A，命令用 clap 的 derive 声明；文件路由 B 生成同样的类型，另开记录。
+
+### 写法
+
+- 命令的 `Args` 结构体同时 derive `Props`，结构体就是组件的 props，`From<Args> for Element` 来自 ink-rs。
+- 子命令 enum 上 `#[derive(Commands)]` 生成 `From<Enum> for Element`，每个变体转换它唯一的字段。嵌套的组是持有另一个 `Commands` enum 的变体。泛型 enum、单元变体、具名字段和多字段的变体报错。
+- 顶层 `Parser` 也是组件。Pastel 的 `_app`、index 命令和 default 命令写在它的渲染函数里：外面包一层，里面 `match` 子命令，没有专门的 API。
+- 名称、版本、描述用 clap 的 `#[command(version, about)]` 从 `Cargo.toml` 读。`eink_rs::cli` 重新导出 `clap`，用户不必自己对齐版本。
+
+### 入口与退出码
+
+- `run::<C>()` 解析 `std::env::args_os()`，`run_from::<C>(argv)` 解析给定的参数，用 `Options::default()` 渲染，等到退出。`tokio` 下的 `run_async`、`run_async_from` 用 ink-rs 的 tokio 驱动，要在 local runtime 或 `LocalSet` 里运行。同步和异步共用解析与退出处理，只有渲染和等待不同。
+- 退出码：clap 的错误打印后用它的码，help、version 为 0，用法错误为 2；`exit_with_error` 和其他 ink-rs 错误向 stderr 打印 `Error: {error}`，返回 1；`exit_with` 的值是 `ExitCode` 时用它；其他退出值、`exit()` 和应用自行结束返回 0；组件 panic 用原 payload 继续 unwind，保留 101。
+- `completion` 下，`run` 系列给 `C::command()` 加 `completions <SHELL>`，匹配时向 stdout 写补全脚本，返回 0。用户的命令不能再叫 `completions`。
+
+### 测试
+
+`parse_from::<C>(argv) -> Result<Element, clap::Error>` 是测试辅助：元素交给 ink-rs 的 `testing::render` 或 `testing::mount`，不加 `completions`。`tests/cli.rs` 只测 derive 分派（含嵌套组和别名）、顶层组件的 default 命令、五种退出码和 `completions` 子命令。Pastel 的测试比对 commander 的 help 文本，不移植。

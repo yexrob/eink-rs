@@ -7,9 +7,17 @@ the Rust port of [Ink](https://github.com/vadimdemedes/ink).
   [Ink UI](https://github.com/vadimdemedes/ink-ui): text, email, password and
   confirm inputs, select and multi-select, spinner, progress bar, badge, status
   message, alert, and ordered and unordered lists.
-- **`eink_rs::cli`** will be a CLI framework modeled on
+- **`eink_rs::cli`** is a CLI framework modeled on
   [Pastel](https://github.com/vadimdemedes/pastel): commands declared as clap
-  types, each rendered by a component. Planned.
+  types, each rendered by a component.
+
+| Feature | Enables |
+|---|---|
+| `cli` | `eink_rs::cli`, clap and `#[derive(Commands)]` |
+| `completion` | `cli` plus a `completions <SHELL>` subcommand |
+| `tokio` | `cli` plus async entry points on ink-rs's tokio driver |
+
+No feature is on by default; `eink_rs::ui` needs none.
 
 eink-rs is not published on crates.io yet.
 
@@ -20,6 +28,13 @@ eink-rs is not published on crates.io yet.
 
 ```sh
 cargo run --example select
+```
+
+`cli` and `cli-async` show the CLI framework:
+
+```sh
+cargo run --example cli --features cli -- --help
+cargo run --example cli-async --features tokio
 ```
 
 ## License
