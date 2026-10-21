@@ -10,7 +10,7 @@ eink-rs 建在 [ink-rs](https://github.com/yexrob/ink-rs) 上，有两部分：
 
 ## 结构
 
-- workspace 的根 package 是 `eink-rs`。proc macro 在 Rust 里要独立成 crate：成员 `macros/`（`eink-rs-macros`）放 `Commands`、`Routes` 两个 derive 和 `routes!`。成员 `examples/file-routes/` 是目录路由的示例包，`examples/ship/` 是组合 ui、cli 和 router 的部署控制台示例包，都不发布。
+- workspace 的根 package 是 `eink-rs`。proc macro 在 Rust 里要独立成 crate：成员 `macros/`（`eink-rs-macros`）放 `Commands`、`Routes` 两个 derive 和 `routes!`。成员 `examples/file-routes/` 是目录路由的示例包，`examples/ship/` 是组合 ui、cli 和 router 的部署控制台示例包，`examples/quill/` 是内联渲染的编码助手示例包，都不发布。
 - `ui` 只依赖 ink-rs。feature 默认都不开：`cli` 加 clap 和 derive，`router` 加路由和它的宏，`completion` 加 clap_complete，`tokio` 加异步入口并开 ink-rs 的 `tokio`；后两个都带上 `cli`。只用组件的项目不编译 clap。
 - 依赖 crates.io 上的 ink-rs，关掉它的默认 feature，开 `macros`。缺的通用原语加进 ink-rs，不在这里绕过。
 
@@ -132,4 +132,4 @@ Ink UI 的主题是一组函数，返回任意 Box/Text 属性，用 deepmerge �
 
 ### 测试
 
-`tests/router.rs` 测解析和打印、历史、布局与页面的生命周期、参数，以及开 `cli` 时的 argv、退出码和子命令优先。`macros` 的单元测试覆盖路径解析、匹配顺序、derive 的报错和目录规划的各条报错。`examples/file-routes/tests/routes.rs` 测目录生成的 enum 和两层布局的渲染。`examples/ship/tests/ship.rs` 测每条路由能渲染和 `status` 的退出码。
+`tests/router.rs` 测解析和打印、历史、布局与页面的生命周期、参数，以及开 `cli` 时的 argv、退出码和子命令优先。`macros` 的单元测试覆盖路径解析、匹配顺序、derive 的报错和目录规划的各条报错。`examples/file-routes/tests/routes.rs` 测目录生成的 enum 和两层布局的渲染。`examples/ship/tests/ship.rs` 测每条路由能渲染和 `status` 的退出码。`examples/quill/tests/quill.rs` 测一轮带审批的交互和 `exec` 的退出码。

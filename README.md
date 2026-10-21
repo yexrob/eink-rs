@@ -65,6 +65,17 @@ cargo run -p ship -- services api logs
 cargo run -p ship -- status
 ```
 
+`examples/quill/` is a simulated coding assistant that renders inline, as
+terminal coding agents do: finished turns go to the scrollback through
+`Static`, a multi-line composer is built on the headless input state, and
+`exec` prints a turn without interaction:
+
+```sh
+cargo run -p quill
+cargo run -p quill -- "fix the failing test"
+cargo run -p quill -- exec "plan a refactor"
+```
+
 ## License
 
 Licensed under either of [Apache License, Version 2.0](LICENSE-APACHE) or
