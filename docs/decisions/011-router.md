@@ -2,7 +2,7 @@
 
 - 日期：2026-10-21
 - 状态：实施中
-- 提交：无
+- 提交：`c373a3b` feat(router): add a typed in-app router
 - Brief：[router-core](briefs/router-core.md)
 
 ## 背景
@@ -57,3 +57,20 @@ Claude 按这些选择拼出完整方案发给用户，还剩一问：页面怎�
    - 在 tmux 会话里跑示例给用户看；
    - 改 web3 demo；
    - 问用户是否推送和发布 0.2.0。
+
+## 结果
+
+- 第一步按 brief 落地（`c373a3b`）。Codex 交回 9 个文件：`macros/src/routes.rs`、`src/router/`、`tests/router.rs`、`examples/router.rs` 等，没有新增依赖，没有碰到 ink-rs 缺的原语。
+- `Routes` 的三个方法：
+  - `from_segments(&[&str]) -> Option<Self>`：父路由把剩下的段交给子路由，返回 `None` 时接着试下一个候选。
+  - `write_segments(&self, &mut Vec<String>)`：父子共用一个缓冲区，index 不写段。
+  - `render(&self) -> Element`。
+- 排序：每轮取声明顺序里第一个没有更优先对手的候选，不把偏序交给 `sort_by`。
+- 每个变体的输出包在各自的闭包组件里，切换变体时重挂载，只改参数时保留。
+- review 时主 agent 改了三处：
+  - `Outlet` 渲染子元素后，向下提供空的子元素。不这样做的话，没有自己布局的页面里放一个 `Outlet` 会把自己再渲染一遍，无限递归。
+  - 去掉变体包装上的 key。闭包类型已经区分变体，key 是多余的。
+  - `RouteArgs` 去掉 `trailing_var_arg`。原来 `market ETH --version` 会把 `--version` 当成路径段，报「no route matches」；去掉后，flag 可以夹在路径段之间。
+- Codex 的偏差：根上有子命令时，路由 enum 需要有 index，因为 clap 走子命令时也要填 `route`。这一点写进了 rustdoc。
+- 测试：`tests/router.rs` 7 项，宏单测新增 3 项。`--workspace --all-features` 的测试、clippy 和 doc 都通过，只开 `router` 的组合也通过。
+- clap 的限制：路由不匹配的报错，用法行显示包名，不是 argv[0]。clap 的 `try_parse_from` 用新建的 `Command` 格式化 `FromArgMatches` 的报错（`clap_builder` 的 `format_error`），拿不到 argv[0]。
