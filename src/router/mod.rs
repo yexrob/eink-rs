@@ -5,7 +5,8 @@
 //! the variant name is the page type. Named fields matching parameters implement
 //! `FromStr + Display + Clone + PartialEq + 'static`. One remaining field can be
 //! a child route implementing [`Routes`]. Tuple variants are not supported.
-//! Parameter displays must be nonempty path segments without `/`.
+//! Parameter displays must be nonempty path segments without `/`. [`routes!`]
+//! generates the same enums from a directory of page files.
 //!
 //! Static segments match before parameters. For the same pattern, a leaf matches
 //! before a child route; other ties retain declaration order. Parameter parse
@@ -35,6 +36,73 @@ use std::fmt;
 use ink_rs::{Callback, Element, Props, Scope, component};
 
 pub use eink_rs_macros::Routes;
+
+/// Generates page modules and route enums from a directory.
+///
+/// The path is relative to `CARGO_MANIFEST_DIR`. The macro belongs in an inline
+/// module whose Rust module directory matches that path, such as this module in
+/// `src/lib.rs` or `src/main.rs`:
+///
+/// ```ignore
+/// pub mod routes {
+///     eink_rs::router::routes!("src/routes");
+/// }
+/// ```
+///
+/// Each `.rs` file declares a public page type implementing
+/// `Default + Into<Element>`. File stems use lowercase snake_case, page types
+/// use PascalCase, and path segments use kebab-case: `order_book.rs` holds
+/// `order_book::OrderBook` at `/order-book`.
+/// Rust keywords use raw module identifiers: `type.rs` becomes `r#type::Type`.
+/// `index.rs` holds `index::Index` at this level's `/`, including at the root.
+/// Hidden entries and files without the `.rs` extension are skipped.
+/// Entries are sorted by name before expansion; variants retain that order.
+///
+/// A static directory such as `market/` becomes an inline `market` module and
+/// a `Market { route: market::Route }` variant at `/market`. Each level exposes
+/// a public `Route` enum deriving [`Routes`], `Clone`, `Debug`, and `PartialEq`.
+/// The derive gives static paths precedence over parameters.
+///
+/// A dynamic directory such as `[pair]/` becomes an inline `pair` module with
+/// `#[path = "[pair]"]` and a `Pair { pair: pair::Pair, route: pair::Route }`
+/// variant at `/:pair`. Its module contains a public `Pair(pub String)` newtype
+/// deriving `Clone`, `Debug`, `PartialEq`, `Eq`, and `Hash`, with `FromStr`
+/// (`Err = core::convert::Infallible`) and `Display` implementations.
+/// Names inside brackets follow the same naming rules as static directories.
+/// Pages under `[pair]/` read the parameter with `use_param::<super::Pair>(cx)`.
+/// Parameter values must be nonempty path segments without `/`.
+///
+/// `_layout.rs` declares `_layout::Layout`, implementing `Default + Into<Element>`.
+/// It adds `#[layout(_layout::Layout)]` to this level's enum and wraps every
+/// route at that level. Layouts render the selected child through [`Outlet`].
+/// A layout inside a dynamic directory can read that directory's parameter.
+///
+/// The calling package requires a `build.rs` that tracks the directory:
+///
+/// ```ignore
+/// fn main() {
+///     println!("cargo::rerun-if-changed=src/routes");
+/// }
+/// ```
+///
+/// This lets Cargo detect added and removed files. Expansion checks `OUT_DIR`
+/// to detect a missing build script; it cannot check the script's output.
+///
+/// # Errors
+///
+/// Expansion reports the offending path for unreadable or missing directories,
+/// a path that is not a directory, invalid names (including uppercase letters,
+/// hyphens, leading digits, and empty snake_case parts), the reserved names
+/// `self`, `super`, and `crate`, `mod.rs`, dynamic files such as `[pair].rs`,
+/// an `index/` directory, or underscore-prefixed entries other than
+/// `_layout.rs`.
+///
+/// Entries cannot share a module name, including `foo.rs` with `foo/` or
+/// `pair.rs` with `[pair]/`. A level cannot contain two dynamic directories.
+/// `[route]/` conflicts with the child field named `route`.
+/// Each directory must contain a page or child directory; `_layout.rs` does not
+/// count. An unset `OUT_DIR` reports the required build script line.
+pub use eink_rs_macros::routes;
 
 #[cfg(feature = "cli")]
 mod args;

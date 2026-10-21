@@ -1,7 +1,7 @@
 use std::process::ExitCode;
 
-use cli_routes::Cli;
 use eink_rs::cli;
+use file_routes::Cli;
 
 fn main() -> ExitCode {
     cli::run::<Cli>()

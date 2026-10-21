@@ -1,12 +1,12 @@
 [package]
-name = "cli-routes"
+name = "file-routes"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.88"
-description = "Deployment commands generated from a directory"
+description = "In-app routes generated from a directory"
 license = "MIT OR Apache-2.0"
 publish = false
 
 [dependencies]
-eink-rs = { path = "../..", features = ["cli"] }
+eink-rs = { path = "../..", features = ["cli", "router"] }
 ink-rs = { version = "0.1.3", default-features = false, features = ["macros"] }

@@ -1,4 +1,4 @@
-//! Command dispatch and routing macros for eink-rs.
+//! The Commands and Routes derives and the routes! macro for eink-rs.
 
 #![forbid(unsafe_code)]
 
@@ -6,7 +6,7 @@ use proc_macro::TokenStream;
 use syn::parse_macro_input;
 
 mod commands;
-mod fs_commands;
+mod fs_routes;
 mod routes;
 
 /// Generates typed path matching, formatting, and rendering for a route enum.
@@ -36,16 +36,16 @@ pub fn derive_commands(input: TokenStream) -> TokenStream {
         .into()
 }
 
-/// Generates command modules and dispatch types from a directory.
+/// Generates page modules and route enums from a directory.
 ///
 /// The directory is relative to `CARGO_MANIFEST_DIR` and must match the inline
 /// module containing this invocation. The package needs a build script that
-/// prints `cargo::rerun-if-changed=<dir>`. The `eink_rs::cli::commands` re-export
+/// prints `cargo::rerun-if-changed=<dir>`. The `eink_rs::router::routes` re-export
 /// documents the layout and naming rules.
 #[proc_macro]
-pub fn commands(input: TokenStream) -> TokenStream {
+pub fn routes(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as syn::LitStr);
-    fs_commands::expand(input)
+    fs_routes::expand(input)
         .unwrap_or_else(syn::Error::into_compile_error)
         .into()
 }

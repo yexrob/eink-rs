@@ -1,8 +1,7 @@
 //! A CLI framework borrowing command components, wrappers, and default commands
 //! from [Pastel](https://github.com/vadimdemedes/pastel).
 //!
-//! Commands are clap derive types, declared by hand or wired from files with
-//! [`commands!`]. Each command's arguments
+//! Commands are clap derive types. Each command's arguments
 //! are its component props, with [`ink_rs::Props`] providing the conversion to
 //! [`Element`]. [`Commands`] dispatches a subcommand enum to those components.
 //! The root [`clap::Parser`] is a component too: its render function supplies
@@ -30,61 +29,6 @@ use ink_rs::{Element, Error, Options};
 
 pub use clap;
 pub use eink_rs_macros::Commands;
-
-/// Generates command modules and dispatch types from a directory.
-///
-/// The path is relative to `CARGO_MANIFEST_DIR`. The macro belongs in an inline
-/// module whose Rust module directory matches that path, such as this module in
-/// `src/lib.rs` or `src/main.rs`:
-///
-/// ```ignore
-/// pub mod commands {
-///     eink_rs::cli::commands!("src/commands");
-/// }
-/// ```
-///
-/// Each `.rs` file declares a public clap `Args` type that converts into
-/// [`Element`], for example through `ink_rs::Props`. File stems are lowercase
-/// snake_case; their types use PascalCase. `deploy.rs` holds `Deploy`, and
-/// `super_deploy.rs` holds `SuperDeploy`, exposed as `super-deploy` by clap.
-/// Rust keywords use raw module identifiers: `type.rs` becomes `r#type::Type`.
-/// Directories follow the same naming rule and become command groups.
-/// Hidden entries and files without the `.rs` extension are skipped.
-/// Entries are sorted by name before expansion.
-///
-/// Each level exposes a `Command` enum deriving [`clap::Subcommand`], `Clone`,
-/// `PartialEq`, and [`Commands`]. A group's `index.rs` holds `index::Index` and
-/// adds a `Group` deriving [`clap::Args`], `Clone`, and `PartialEq`. Its public
-/// fields are `index: index::Index` and `command: Option<Command>`. Converting
-/// `Group` into an [`Element`] renders the subcommand or, when absent, the index.
-/// The index's doc comment and clap aliases supply the group's metadata.
-/// Index arguments conflict with subcommands. A group without an index requires
-/// a subcommand; a bare invocation produces a clap usage error with help.
-/// The root parser and component remain handwritten, including its wrapper and
-/// `None` arm for the default command.
-///
-/// The calling package requires a `build.rs` that tracks the directory:
-///
-/// ```ignore
-/// fn main() {
-///     println!("cargo::rerun-if-changed=src/commands");
-/// }
-/// ```
-///
-/// This lets Cargo detect added and removed files. Expansion checks `OUT_DIR`
-/// to detect a missing build script; it cannot check the script's output.
-/// Generated modules import the [`clap`] re-export, so the package does not
-/// need a direct clap dependency.
-///
-/// # Errors
-///
-/// Expansion reports the offending path for unreadable or missing directories,
-/// a path that is not a directory, invalid names (including uppercase letters,
-/// hyphens, leading underscores or digits), the reserved stems `self`, `super`,
-/// `crate` and `clap` (generated modules import `clap`), `mod.rs`, a file and directory sharing a stem, a directory with
-/// no commands (`index.rs` does not count), or an `index.rs` at the root.
-/// An unset `OUT_DIR` reports the required build script line.
-pub use eink_rs_macros::commands;
 
 /// Parses arguments into a component element without mounting it.
 ///

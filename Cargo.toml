@@ -15,7 +15,7 @@ exclude = ["/docs", "/CLAUDE.md", "/AGENTS.md", "/.gitignore", "/.github"]
 all-features = true
 
 [workspace]
-members = ["macros", "examples/cli-routes"]
+members = ["macros", "examples/file-routes"]
 resolver = "3"
 
 [features]
