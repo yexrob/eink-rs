@@ -46,3 +46,4 @@
 | [002](002-inkui-port-plan.md) | 2026-10-21 | Ink UI 移植：结构、主题与分工 | 已实施 |
 | [003](003-inkui-examples.md) | 2026-10-21 | Ink UI 示例 | 已实施 |
 | [004](004-cli-route-a.md) | 2026-10-21 | CLI 框架：路由 A | 已实施 |
+| [005](005-cli-route-b-research.md) | 2026-10-21 | CLI 框架：路由 B 调研 | 实施中 |
