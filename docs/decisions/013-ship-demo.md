@@ -1,8 +1,8 @@
 # 部署控制台示例 `ship`；路由词不再被当成子命令
 
 - 日期：2026-10-21
-- 状态：实施中
-- 提交：无
+- 状态：已实施
+- 提交：`d9b9210` fix(router): keep later route words from matching subcommands；`aaaa25f` feat(examples): add the ship deploy console
 - Brief：[ship-demo](briefs/ship-demo.md)
 
 ## 背景
@@ -64,3 +64,37 @@ Claude 问场景和位置，用户选「部署控制台」和「eink-rs 仓库�
 1. 主 agent：本记录、brief 和 README 索引行先提交；再改 `src/router/args.rs`、`src/router/mod.rs` 的模块文档、`docs/design.md` 的 argv 一节和 `tests/router.rs`，跑 `--workspace --all-features` 的测试和 clippy，提交修正。
 2. 派一个 Codex，worktree 基于修正后的 main，brief 见 [ship-demo](briefs/ship-demo.md)。它只跑 `ship` 包的测试和 brief 里列出的命令，不跑需要终端的全屏和 `-f`。
 3. 主 agent 集成：review，合入，fmt（`routes!` 下的文件 `cargo fmt` 进不去，用 `rustfmt --edition 2024`）、clippy、全量测试；README 和 `docs/design.md` 提到 `examples/ship/`；在 tmux 里跑全部页面和命令给用户看；补本记录的结果；删 worktree。
+
+## 结果
+
+- `RouteArgs` 的修正按方案落地（`d9b9210`）。去掉修正时，新加的断言失败；加上后 `--workspace --all-features` 的测试和 clippy 通过。
+- Codex 交回 26 个文件，+1896 行，没有新增依赖，没有碰到缺的原语：
+  - `backend.rs` 是接口和数据类型，加一个按指针比较的句柄；
+  - `sim.rs` 是模拟实现；
+  - `commands.rs` 是 `status` 和 `logs`；
+  - `view.rs` 放共享的视图；
+  - `src/routes/` 下 13 个页面、3 个布局；
+  - `tests/ship.rs` 是两个测试。
+- Codex 定的细节：
+  - 根组件用 `use_animation` 推进 backend，再经 context 提供一个 `Revision`，读数据的组件靠它在每次推进后重渲染。
+  - 向导的草稿放在布局里一个以服务名为 key 的子组件中，换服务时重挂载。
+  - 服务页用 Tab/Shift-Tab 切标签，Ctrl-P 切换 pin，pin 是演示布局状态保留的那一项。
+  - `worker v2.0.0` 在第 6 秒失败。
+  - 导航：`push` 用在列表、向导和账号入口；`replace` 用在标签切换和确认后进入执行页；`back` 用在外壳的 Esc 和确认页的取消；`push_path` 用在总览菜单。
+- review 时主 agent 改了这些：
+  - `Backend::advance` 改名为 `refresh`：接口不该带模拟器的说法；
+  - 在 scale 页输入副本数时，`d` 会跳到发布向导，现在这一页不响应 `d`；
+  - 健康状态到颜色的映射原来写了两份，合成 `ConsoleTheme::health`；`view.rs` 补了空行和文档；
+  - 草稿没选区域时，标题末尾多一个 `/`，现在显示 `choose regions`；
+  - 账号页的邮箱框按 Enter 会接受补全并保存，而 token 还空，所以报错。现在 Enter 接受补全后把焦点移到 token 框，在 token 框按 Enter 才保存；
+  - 模拟日志原来每秒同一句话，改成随机的请求和延迟。随机数原来是 xorshift，种子小，前几步高位几乎不变，延迟都是 112、113、114ms，改成 SplitMix64。
+- 主 agent 在 tmux 窗口 `ink-rs:ship` 里跑过：
+  - 总览：事故出现时，健康度降到 82%，Alert 也显示了；
+  - 服务列表的过滤，详情页的标签切换（pin 保留）；
+  - 日志的暂停；扩缩容的校验和确认；回滚和它的进度；
+  - 向导选 `worker v2.0.0` 走到失败；从执行页返回时跳过确认页，草稿还在；
+  - 切主题后，外壳和 Badge 的颜色一起变；账号页能补全邮箱、切焦点、保存；
+  - `ship services api logs` 直接打开那一页；
+  - `status` 退出码 0，`status nope` 退出码 1，`nope` 退出码 2；`logs api -n 3 -f` 的旧行留在终端历史里，按 q 退出。
+- 全量：fmt（`routes!` 下的文件用 `rustfmt --edition 2024` 检查）、clippy 通过，`--workspace --all-features` 134 个测试通过。
+- 修正没有发布，0.2.1 另问用户。

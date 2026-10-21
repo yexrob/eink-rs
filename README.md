@@ -55,6 +55,16 @@ cargo run --example router --features cli,router -- market ETH
 cargo run -p file-routes -- market ETH book
 ```
 
+`examples/ship/` combines all three in a simulated deploy console: directory
+routes with nested layouts, a deploy wizard, theme switching, and commands that
+print to the normal screen:
+
+```sh
+cargo run -p ship
+cargo run -p ship -- services api logs
+cargo run -p ship -- status
+```
+
 ## License
 
 Licensed under either of [Apache License, Version 2.0](LICENSE-APACHE) or
