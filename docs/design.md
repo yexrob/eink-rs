@@ -9,7 +9,7 @@ eink-rs 建在 [ink-rs](https://github.com/yexrob/ink-rs) 上，有两部分：
 
 ## 结构
 
-- workspace 的根 package 是 `eink-rs`。proc macro 和 build.rs 用的库在 Rust 里要独立成 crate：成员 `macros/`（`eink-rs-macros`）放 derive，做文件路由 B 时加 `build/`。
+- workspace 的根 package 是 `eink-rs`。proc macro 在 Rust 里要独立成 crate：成员 `macros/`（`eink-rs-macros`）放 `Commands` derive 和 `commands!`。成员 `examples/cli-routes/` 是路由 B 的示例包，不发布。
 - `ui` 只依赖 ink-rs。feature 默认都不开：`cli` 加 clap 和 derive，`completion` 加 clap_complete，`tokio` 加异步入口并开 ink-rs 的 `tokio`；后两个都带上 `cli`。只用组件的项目不编译 clap。
 - 依赖 crates.io 上的 ink-rs，关掉它的默认 feature，开 `macros`。缺的通用原语加进 ink-rs，不在这里绕过。
 
@@ -72,7 +72,7 @@ Ink UI 的主题是一组函数，返回任意 Box/Text 属性，用 deepmerge �
 
 ## cli
 
-参照 Pastel 4.0.1，只借概念：命令即组件、包裹、index 与 default 命令、别名。help 格式、`-v` 和 Pastel 的测试不对齐。这是路由 A，命令用 clap 的 derive 声明；文件路由 B 生成同样的类型，另开记录。
+参照 Pastel 4.0.1，只借概念：命令即组件、包裹、index 与 default 命令、别名。help 格式、`-v` 和 Pastel 的测试不对齐。命令有两种写法：路由 A 用 clap 的 derive 手写子命令 enum，路由 B 用 `commands!` 从目录生成同样的 enum。
 
 ### 写法
 
@@ -80,6 +80,18 @@ Ink UI 的主题是一组函数，返回任意 Box/Text 属性，用 deepmerge �
 - 子命令 enum 上 `#[derive(Commands)]` 生成 `From<Enum> for Element`，每个变体转换它唯一的字段。嵌套的组是持有另一个 `Commands` enum 的变体。泛型 enum、单元变体、具名字段和多字段的变体报错。
 - 顶层 `Parser` 也是组件。Pastel 的 `_app`、index 命令和 default 命令写在它的渲染函数里：外面包一层，里面 `match` 子命令，没有专门的 API。
 - 名称、版本、描述用 clap 的 `#[command(version, about)]` 从 `Cargo.toml` 读。`eink_rs::cli` 重新导出 `clap`，用户不必自己对齐版本。
+
+### 路由 B：目录即命令
+
+- `pub mod commands { eink_rs::cli::commands!("src/commands"); }`：路径相对 `CARGO_MANIFEST_DIR`，宏写在模块目录与该路径一致的内联模块里。宏展开成裸的 `pub mod` 和各层的类型，rustc 和 rust-analyzer 按宏调用处的模块找文件，不用 `#[path]`。
+- 每个 `.rs` 文件是一个命令。模块名是文件名，类型名是它的 PascalCase：`super_deploy.rs` 里是 `SuperDeploy`，clap 的命令名为 `super-deploy`。关键字用原始标识符，`type.rs` 是 `r#type`。描述、别名、隐藏写在文件里的结构体上；命令名只来自文件名，clap 不读结构体上的 `name`。
+- 每层生成 `pub enum Command`，derive `Subcommand`、`Clone`、`PartialEq` 和 `Commands`。子目录是命令组：
+  - 没有 `index.rs` 时，变体带 `#[command(subcommand)]`，不带子命令时 clap 打印 help，退出码 2。
+  - 有 `index.rs` 时另生成 `Group`：flatten `index::Index`，加 `Option<Command>`，开 `args_conflicts_with_subcommands`。index 的文档注释和别名成为组的描述和别名，不带子命令时渲染 index。
+- 根 `Parser` 手写，同路由 A。根目录的 `index.rs` 报错：Pastel 的根 index、`_app` 和 default 都写在根组件里。
+- 报错用 `compile_error!` 指向宏调用处，消息带路径：文件名不是小写 snake_case；`self`、`super`、`crate`、`clap`（生成的模块导入 `clap`）；`mod.rs`；`foo.rs` 与 `foo/` 并存；没有命令的目录。Pastel 不检查，同名时静默覆盖。非 `.rs` 文件和隐藏条目跳过，条目按名字排序。
+- 生成的项用 `#[doc = concat!(..)]` 写文档：clap 不读表达式形式的文档，命令的描述留给用户的类型。
+- 重编译：稳定版的宏察觉不到新增文件，用户的包要有一行 `cargo::rerun-if-changed=src/commands` 的 build.rs。宏展开时检查 `OUT_DIR`，包没有 build script 时报错；build script 的输出查不到。不支持 nightly 的 `tracked::path`。
 
 ### 入口与退出码
 
@@ -89,4 +101,4 @@ Ink UI 的主题是一组函数，返回任意 Box/Text 属性，用 deepmerge �
 
 ### 测试
 
-`parse_from::<C>(argv) -> Result<Element, clap::Error>` 是测试辅助：元素交给 ink-rs 的 `testing::render` 或 `testing::mount`，不加 `completions`。`tests/cli.rs` 只测 derive 分派（含嵌套组和别名）、顶层组件的 default 命令、五种退出码和 `completions` 子命令。Pastel 的测试比对 commander 的 help 文本，不移植。
+`parse_from::<C>(argv) -> Result<Element, clap::Error>` 是测试辅助：元素交给 ink-rs 的 `testing::render` 或 `testing::mount`，不加 `completions`。`tests/cli.rs` 只测 derive 分派（含嵌套组和别名）、顶层组件的 default 命令、五种退出码和 `completions` 子命令。路由 B 的规划是纯函数，`macros` 的单元测试覆盖名字转换和各条报错；`examples/cli-routes/tests/routes.rs` 覆盖目录生成的分派和 index 组的元数据。Pastel 的测试比对 commander 的 help 文本，不移植。

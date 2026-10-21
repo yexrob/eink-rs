@@ -1,4 +1,4 @@
-//! Command dispatch derives for eink-rs.
+//! Command dispatch and directory routing macros for eink-rs.
 
 #![forbid(unsafe_code)]
 
@@ -6,6 +6,7 @@ use proc_macro::TokenStream;
 use syn::parse_macro_input;
 
 mod commands;
+mod fs_commands;
 
 /// Generates `From<Enum> for ::ink_rs::Element` by converting each variant's field.
 ///
@@ -13,9 +14,23 @@ mod commands;
 /// Command props can derive `ink_rs::Props`; nested enums can derive `Commands`.
 /// Structs, unions, and generic enums are not supported.
 #[proc_macro_derive(Commands)]
-pub fn commands(input: TokenStream) -> TokenStream {
+pub fn derive_commands(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as syn::DeriveInput);
     commands::expand(input)
+        .unwrap_or_else(syn::Error::into_compile_error)
+        .into()
+}
+
+/// Generates command modules and dispatch types from a directory.
+///
+/// The directory is relative to `CARGO_MANIFEST_DIR` and must match the inline
+/// module containing this invocation. The package needs a build script that
+/// prints `cargo::rerun-if-changed=<dir>`. The `eink_rs::cli::commands` re-export
+/// documents the layout and naming rules.
+#[proc_macro]
+pub fn commands(input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as syn::LitStr);
+    fs_commands::expand(input)
         .unwrap_or_else(syn::Error::into_compile_error)
         .into()
 }

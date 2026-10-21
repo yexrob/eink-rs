@@ -12,7 +12,7 @@ categories = ["command-line-interface"]
 exclude = ["/docs", "/CLAUDE.md", "/AGENTS.md", "/.gitignore", "/.github"]
 
 [workspace]
-members = ["macros"]
+members = ["macros", "examples/cli-routes"]
 resolver = "3"
 
 [features]

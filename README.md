@@ -9,7 +9,8 @@ the Rust port of [Ink](https://github.com/vadimdemedes/ink).
   message, alert, and ordered and unordered lists.
 - **`eink_rs::cli`** is a CLI framework modeled on
   [Pastel](https://github.com/vadimdemedes/pastel): commands declared as clap
-  types, each rendered by a component.
+  types or generated from a directory with `commands!`, each rendered by a
+  component.
 
 | Feature | Enables |
 |---|---|
@@ -35,6 +36,13 @@ cargo run --example select
 ```sh
 cargo run --example cli --features cli -- --help
 cargo run --example cli-async --features tokio
+```
+
+`examples/cli-routes/` is a package whose commands come from the files under
+`src/commands/`:
+
+```sh
+cargo run -p cli-routes -- --help
 ```
 
 ## License
