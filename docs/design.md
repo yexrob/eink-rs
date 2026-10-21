@@ -4,13 +4,14 @@ eink-rs 建在 [ink-rs](https://github.com/yexrob/ink-rs) 上，有两部分：
 
 - `ui`：移植 Ink UI 2.0.0 的 13 个组件和 `useSpinner`。
 - `cli`：参照 Pastel 4.0.1 的 CLI 框架，命令用 clap 声明，由组件渲染。
+- `router`：参照 React Router 的应用内路由，路由表是 enum，可以从目录生成。
 
 设计怎么来的见 [decisions/](decisions/README.md)。
 
 ## 结构
 
-- workspace 的根 package 是 `eink-rs`。proc macro 在 Rust 里要独立成 crate：成员 `macros/`（`eink-rs-macros`）放 `Commands` derive 和 `commands!`。成员 `examples/cli-routes/` 是路由 B 的示例包，不发布。
-- `ui` 只依赖 ink-rs。feature 默认都不开：`cli` 加 clap 和 derive，`completion` 加 clap_complete，`tokio` 加异步入口并开 ink-rs 的 `tokio`；后两个都带上 `cli`。只用组件的项目不编译 clap。
+- workspace 的根 package 是 `eink-rs`。proc macro 在 Rust 里要独立成 crate：成员 `macros/`（`eink-rs-macros`）放 `Commands`、`Routes` 两个 derive 和 `routes!`。成员 `examples/file-routes/` 是目录路由的示例包，不发布。
+- `ui` 只依赖 ink-rs。feature 默认都不开：`cli` 加 clap 和 derive，`router` 加路由和它的宏，`completion` 加 clap_complete，`tokio` 加异步入口并开 ink-rs 的 `tokio`；后两个都带上 `cli`。只用组件的项目不编译 clap。
 - 依赖 crates.io 上的 ink-rs，关掉它的默认 feature，开 `macros`。缺的通用原语加进 ink-rs，不在这里绕过。
 
 ## ui
@@ -72,7 +73,7 @@ Ink UI 的主题是一组函数，返回任意 Box/Text 属性，用 deepmerge �
 
 ## cli
 
-参照 Pastel 4.0.1，只借概念：命令即组件、包裹、index 与 default 命令、别名。help 格式、`-v` 和 Pastel 的测试不对齐。命令有两种写法：路由 A 用 clap 的 derive 手写子命令 enum，路由 B 用 `commands!` 从目录生成同样的 enum。
+参照 Pastel 4.0.1，只借概念：命令即组件、包裹、index 与 default 命令、别名。help 格式、`-v` 和 Pastel 的测试不对齐。命令用 clap 的 derive 手写子命令 enum。0.1 的 `commands!`（从目录生成命令）在 0.2 删掉，目录生成改给应用内路由，见 [011](decisions/011-router.md)。
 
 ### 写法
 
@@ -80,18 +81,6 @@ Ink UI 的主题是一组函数，返回任意 Box/Text 属性，用 deepmerge �
 - 子命令 enum 上 `#[derive(Commands)]` 生成 `From<Enum> for Element`，每个变体转换它唯一的字段。嵌套的组是持有另一个 `Commands` enum 的变体。泛型 enum、单元变体、具名字段和多字段的变体报错。
 - 顶层 `Parser` 也是组件。Pastel 的 `_app`、index 命令和 default 命令写在它的渲染函数里：外面包一层，里面 `match` 子命令，没有专门的 API。
 - 名称、版本、描述用 clap 的 `#[command(version, about)]` 从 `Cargo.toml` 读。`eink_rs::cli` 重新导出 `clap`，用户不必自己对齐版本。
-
-### 路由 B：目录即命令
-
-- `pub mod commands { eink_rs::cli::commands!("src/commands"); }`：路径相对 `CARGO_MANIFEST_DIR`，宏写在模块目录与该路径一致的内联模块里。宏展开成裸的 `pub mod` 和各层的类型，rustc 和 rust-analyzer 按宏调用处的模块找文件，不用 `#[path]`。
-- 每个 `.rs` 文件是一个命令。模块名是文件名，类型名是它的 PascalCase：`super_deploy.rs` 里是 `SuperDeploy`，clap 的命令名为 `super-deploy`。关键字用原始标识符，`type.rs` 是 `r#type`。描述、别名、隐藏写在文件里的结构体上；命令名只来自文件名，clap 不读结构体上的 `name`。
-- 每层生成 `pub enum Command`，derive `Subcommand`、`Clone`、`PartialEq` 和 `Commands`。子目录是命令组：
-  - 没有 `index.rs` 时，变体带 `#[command(subcommand)]`，不带子命令时 clap 打印 help，退出码 2。
-  - 有 `index.rs` 时另生成 `Group`：flatten `index::Index`，加 `Option<Command>`，开 `args_conflicts_with_subcommands`。index 的文档注释和别名成为组的描述和别名，不带子命令时渲染 index。
-- 根 `Parser` 手写，同路由 A。根目录的 `index.rs` 报错：Pastel 的根 index、`_app` 和 default 都写在根组件里。
-- 报错用 `compile_error!` 指向宏调用处，消息带路径：文件名不是小写 snake_case；`self`、`super`、`crate`、`clap`（生成的模块导入 `clap`）；`mod.rs`；`foo.rs` 与 `foo/` 并存；没有命令的目录。Pastel 不检查，同名时静默覆盖。非 `.rs` 文件和隐藏条目跳过，条目按名字排序。
-- 生成的项用 `#[doc = concat!(..)]` 写文档：clap 不读表达式形式的文档，命令的描述留给用户的类型。
-- 重编译：稳定版的宏察觉不到新增文件，用户的包要有一行 `cargo::rerun-if-changed=src/commands` 的 build.rs。宏展开时检查 `OUT_DIR`，包没有 build script 时报错；build script 的输出查不到。不支持 nightly 的 `tracked::path`。
 
 ### 入口与退出码
 
@@ -101,4 +90,46 @@ Ink UI 的主题是一组函数，返回任意 Box/Text 属性，用 deepmerge �
 
 ### 测试
 
-`parse_from::<C>(argv) -> Result<Element, clap::Error>` 是测试辅助：元素交给 ink-rs 的 `testing::render` 或 `testing::mount`，不加 `completions`。`tests/cli.rs` 只测 derive 分派（含嵌套组和别名）、顶层组件的 default 命令、五种退出码和 `completions` 子命令。路由 B 的规划是纯函数，`macros` 的单元测试覆盖名字转换和各条报错；`examples/cli-routes/tests/routes.rs` 覆盖目录生成的分派和 index 组的元数据。Pastel 的测试比对 commander 的 help 文本，不移植。
+`parse_from::<C>(argv) -> Result<Element, clap::Error>` 是测试辅助：元素交给 ink-rs 的 `testing::render` 或 `testing::mount`，不加 `completions`。`tests/cli.rs` 只测 derive 分派（含嵌套组和别名）、顶层组件的 default 命令、五种退出码和 `completions` 子命令。Pastel 的测试比对 commander 的 help 文本，不移植。
+
+## router
+
+参照 React Router 的 `MemoryRouter`：路由表、历史、嵌套布局和 `Outlet`、路径参数。没有前进、loader、导航拦截。讨论见 [010](decisions/010-router-research.md) 和 [011](decisions/011-router.md)。
+
+### 路由表
+
+- enum 上 `#[derive(Routes)]`，每个变体一个 `#[route("/a/:b")]`，第二个参数可以指定页面类型，不写就用变体名。derive 生成 `Routes`、`FromStr`（`Err = RouteError`）和 `Display`。
+- 路径里的 `:name` 对应同名字段，类型实现 `FromStr + Display + Clone + PartialEq`。不在路径里的字段是子路由，一个变体最多一个，类型也实现 `Routes`。嵌套用嵌套的 enum。
+- 变体上的 `#[layout(L)]` 包住它的子路由，enum 上的包住这一层的每条路由。页面和布局都是 `Default + Into<Element>`，用 `T::default()` 构造。布局用 `Outlet` 渲染子路由。
+- 匹配：逐段比较，静态段优先于参数段；同一模式下叶子优先于带子路由的变体；其余按书写顺序。参数的 `FromStr` 失败时试下一条。两条叶子的模式相同时编译报错。`FromStr` 忽略空段，参数值里不能有 `/`。
+
+### 渲染
+
+- 每个变体的输出包在各自的闭包组件里：换变体时重挂载，只换参数时保留。enum 级布局在变体之外，换这一层的变体时保留状态。
+- 参数经 context 提供给下面的整棵子树，`use_param::<T>(cx)` 按类型取最近的值。变体级布局在参数之内，能读到；enum 级布局读不到本层的参数。参数用 newtype 区分。
+- `Outlet` 从 context 取布局给它的子元素，没有时渲染空元素；它向下提供空的子元素，页面里多放的 `Outlet` 不会把自己再渲染一遍。
+
+### 历史
+
+- `Router::new(initial)` 把历史 `Vec<R>` 放在 `use_state` 里，初始路由只在挂载时读。它向下提供 `RouterHandle<R>`：当前路由、深度和一个 `use_callback` 做的导航回调。`State` 放不进 context，所以提供回调。
+- `use_router::<R>(cx)` 取 handle：`route()`、`can_go_back()`、`push`、`replace`、`back`、`push_path`。push 和当前路由相同时不入栈，栈底 `back()` 不动。导航写在按键处理和 effect 里，不在渲染时调用。
+- 应用自己绑返回键。触发导航的键也会送到按下时已注册的其他按键处理。页面返回时重挂载。获得焦点的组件卸载后焦点为空，新页面的 `auto_focus` 生效。
+
+### 目录路由
+
+- `pub mod routes { eink_rs::router::routes!("src/routes"); }` 生成同样的嵌套 enum 和页面模块。路径相对 `CARGO_MANIFEST_DIR`，宏写在模块目录与该路径一致的内联模块里，包要有 `cargo::rerun-if-changed` 的 build.rs，展开时检查 `OUT_DIR`。
+- 每层生成 `pub enum Route`：
+  - `foo.rs` 是 `/foo` 的页面 `foo::Foo`；路径段用 kebab-case，`order_book.rs` 对应 `/order-book`，和 clap 的命令名一致。
+  - `index.rs` 是本层 `/` 的页面，根目录也可以有。
+  - `foo/` 生成子模块和 `Foo { route: foo::Route }`。
+  - `[pair]/` 生成 `#[path = "[pair]"]` 的子模块、`Pair(pub String)` newtype 和 `Pair { pair: pair::Pair, route: pair::Route }`，页面用 `use_param::<super::Pair>(cx)`。rustc 和 rust-analyzer 都按 `#[path]` 找到 `[pair]/` 下的文件。
+  - `_layout.rs` 的 `_layout::Layout` 是本层的 enum 级布局。
+- 报错带路径：名字不是小写 snake_case，`self`、`super`、`crate`，`mod.rs`，`[pair].rs`（动态段只能是目录），`index/` 目录，`_layout.rs` 以外的下划线开头的条目，同名模块（`foo.rs` 与 `foo/`、`pair.rs` 与 `[pair]/`），一层两个动态目录（后一个匹配不到），`[route]/`（和子路由字段重名），没有页面和子目录的目录。
+
+### argv
+
+`cli` 和 `router` 都开时，`RouteArgs<R>` 可以 flatten 进根 `Parser`：每个位置参数是一个路径段，flag 可以夹在中间，没有词时是根 index。匹配不上时报 clap 的 `InvalidValue`，退出码 2。根上的子命令优先；这时 `route` 取根 index，所以有子命令时路由 enum 要有 index。clap 用新建的 `Command` 格式化这条报错，用法行显示包名，不是 argv[0]。
+
+### 测试
+
+`tests/router.rs` 测解析和打印、历史、布局与页面的生命周期、参数，以及开 `cli` 时的 argv、退出码和子命令优先。`macros` 的单元测试覆盖路径解析、匹配顺序、derive 的报错和目录规划的各条报错。`examples/file-routes/tests/routes.rs` 测目录生成的 enum 和两层布局的渲染。

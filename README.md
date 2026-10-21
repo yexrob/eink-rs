@@ -1,7 +1,8 @@
 # eink-rs
 
-Components and a CLI framework for [ink-rs](https://github.com/yexrob/ink-rs),
-the Rust port of [Ink](https://github.com/vadimdemedes/ink).
+Components, a CLI framework and an in-app router for
+[ink-rs](https://github.com/yexrob/ink-rs), the Rust port of
+[Ink](https://github.com/vadimdemedes/ink).
 
 - **`eink_rs::ui`** ports the components of
   [Ink UI](https://github.com/vadimdemedes/ink-ui): text, email, password and
@@ -9,12 +10,17 @@ the Rust port of [Ink](https://github.com/vadimdemedes/ink).
   message, alert, and ordered and unordered lists.
 - **`eink_rs::cli`** is a CLI framework modeled on
   [Pastel](https://github.com/vadimdemedes/pastel): commands declared as clap
-  types or generated from a directory with `commands!`, each rendered by a
-  component.
+  types, each rendered by a component.
+- **`eink_rs::router`** is an in-app router modeled on
+  [React Router](https://reactrouter.com/): a route enum with
+  `#[derive(Routes)]` or generated from a directory with `routes!`, a history
+  with push, replace and back, nested layouts with `Outlet`, typed path
+  parameters, and argv as the initial route.
 
 | Feature | Enables |
 |---|---|
-| `cli` | `eink_rs::cli`, clap, `#[derive(Commands)]` and `commands!` |
+| `cli` | `eink_rs::cli`, clap and `#[derive(Commands)]` |
+| `router` | `eink_rs::router`, `#[derive(Routes)]` and `routes!`; with `cli`, `RouteArgs` |
 | `completion` | `cli` plus a `completions <SHELL>` subcommand |
 | `tokio` | `cli` plus async entry points on ink-rs's tokio driver |
 
@@ -41,11 +47,12 @@ cargo run --example cli --features cli -- --help
 cargo run --example cli-async --features tokio
 ```
 
-`examples/cli-routes/` is a package whose commands come from the files under
-`src/commands/`:
+`router` shows the router, and `examples/file-routes/` is a package whose
+routes come from the files under `src/routes/`:
 
 ```sh
-cargo run -p cli-routes -- --help
+cargo run --example router --features cli,router -- market ETH
+cargo run -p file-routes -- market ETH book
 ```
 
 ## License

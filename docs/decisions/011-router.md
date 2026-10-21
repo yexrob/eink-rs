@@ -1,8 +1,8 @@
 # 应用内路由：Router、`#[derive(Routes)]`、`routes!`
 
 - 日期：2026-10-21
-- 状态：实施中
-- 提交：`c373a3b` feat(router): add a typed in-app router
+- 状态：已实施
+- 提交：`c373a3b` feat(router): add a typed in-app router；`68bc3b8` feat(router)!: add routes! and remove commands!
 - Brief：[router-core](briefs/router-core.md)、[router-files](briefs/router-files.md)
 
 ## 背景
@@ -84,3 +84,12 @@ Claude 按这些选择拼出完整方案发给用户，还剩一问：页面怎�
 - Codex 的偏差：根上有子命令时，路由 enum 需要有 index，因为 clap 走子命令时也要填 `route`。这一点写进了 rustdoc。
 - 测试：`tests/router.rs` 7 项，宏单测新增 3 项。`--workspace --all-features` 的测试、clippy 和 doc 都通过，只开 `router` 的组合也通过。
 - clap 的限制：路由不匹配的报错，用法行显示包名，不是 argv[0]。clap 的 `try_parse_from` 用新建的 `Command` 格式化 `FromArgMatches` 的报错（`clap_builder` 的 `format_error`），拿不到 argv[0]。
+- 第二步按 brief 落地（`68bc3b8`）：`macros/src/fs_routes.rs` 由 `fs_commands.rs` 改造，`routes!` 从 `eink_rs::router` 导出，删掉 `commands!` 和 `examples/cli-routes`，新增 `examples/file-routes`。没有新增依赖，没有碰到 ink-rs 缺的原语。
+- review 时主 agent 改了两处：
+  - 静态路径段改用 kebab-case：`order_book.rs` 对应 `/order-book`，和 clap 的命令名一致，argv 里少打下划线。参数名不变，它要和字段同名。
+  - `route.rs` 和 `route/` 不再报错。只有 `[route]/` 和子路由字段重名；brief 把 `route` 列进了保留名，这是 brief 的错。
+- 验证：`--workspace --all-features` 的测试、clippy、doc 都通过。`cargo package -p eink-rs --list` 不含示例包。Codex 拆掉 build.rs 构建，`OUT_DIR` 的报错按预期给出。
+- tmux 里跑了 `examples/router.rs` 和 `file-routes`：c 加计数，1、2 换页，t 换币对，Esc 返回，w 进钱包，q 退出。布局计数在换页、换币对时保留，从钱包返回后归零（重挂载）。`file-routes nope` 报「no route matches `/nope`」，退出码 2。
+- web3 demo 改用手写的 `Command` enum（demo 仓库 `687e426`），`chain` 组手写 `Chain` 和 `From<Chain> for Element`，删掉 build.rs。改前改后的 `--help`、`chain --help`、`chain events --help`、`watch --help` 输出一致。
+- 文档：`docs/design.md` 加 router 一节，删掉路由 B；README、crate 文档和包描述加上 router。
+- 版本仍是 0.1.0。升 0.2.0 和发布等用户决定，另开记录。
