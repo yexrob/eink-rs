@@ -50,5 +50,5 @@
 | [006](006-ink-rs-0-1-3.md) | 2026-10-21 | 升级 ink-rs 0.1.3 | 已实施 |
 | [007](007-cli-route-b.md) | 2026-10-21 | CLI 框架：路由 B | 已实施 |
 | [008](008-release-0-1-0.md) | 2026-10-21 | 发布 0.1.0 | 已实施 |
-| [009](009-web3-demo.md) | 2026-10-21 | 用 eink-rs 改写 web3 demo，加 `cli::run_with` | 实施中 |
+| [009](009-web3-demo.md) | 2026-10-21 | 用 eink-rs 改写 web3 demo，加 `cli::run_with` | 已实施 |
 | [010](010-router-research.md) | 2026-10-21 | 应用内路由调研 | 实施中 |

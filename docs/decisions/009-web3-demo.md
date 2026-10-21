@@ -1,8 +1,8 @@
 # 用 eink-rs 改写 web3 demo，加 `cli::run_with`
 
 - 日期：2026-10-21
-- 状态：实施中
-- 提交：无
+- 状态：已实施
+- 提交：`e7b7126`；demo 在它自己的 git 里：`04d961f`（原版）、`4e397c2`（改写）
 - Brief：[web3-demo](briefs/web3-demo.md)
 
 ## 背景
@@ -44,3 +44,23 @@ Claude 问了三个问题，用户都选了推荐项。
 1. 主 agent：`src/cli/mod.rs` 加 `run_with` 和 rustdoc，`docs/design.md` 的入口一节加一句；跑 clippy、doc 和 `--workspace --all-features` 的测试，和本记录一起提交。
 2. 派一个 Codex，在 `~/tmp/web3-market` 改写，brief 见 [web3-demo](briefs/web3-demo.md)。不跑需要终端的命令。
 3. 集成（主 agent）：review，clippy，在新的 tmux 会话 `web3` 里运行全部命令，在 demo 的 git 里提交，补本记录的结果。
+
+## 结果
+
+- `run_with` 按方案落地（`e7b7126`）。clippy、doc 和 `--workspace --all-features` 的测试通过。
+- Codex 改写 demo，19 个文件，+1218/−301：
+  - `src/market.rs` 用 context 提供 `Rc<RefCell<dyn Feed>>`，并负责币对校验、轮询和 follow 的退出。
+  - `src/colors.rs` 和 `src/views.rs` 放共享配色和视图，`src/ui.rs` 只留全屏布局。
+  - `src/commands/` 下 8 个命令，`chain` 是带 `index.rs` 的组。
+  - `Trade` 和 `Event` 加序号，流按序号去重后追加到 `Static`。
+  - 行情模型不变。
+- review 时主 agent 改了一处：swap 成功页的模拟交易号原是 64 位宽的纳秒时间戳，前面一串 0，改成 SplitMix64 生成的 32 字节。
+- tmux 会话 `web3` 里跑了全部命令：
+  - `web3` 和 `watch sol -i 1m` 开备用屏，j/k/h/l、空格（LIVE 和 PAUSED 切换）、q、Esc 都正常，退出码 0，退出后终端历史还在。
+  - `price`、`book`、`trades`、`chain`、`chain events`、`wallet` 的快照和 `--follow` 正常，q 退出码 0。`price` 启动到首帧 0.18s。
+  - `price nope` 打印已知币对，退出码 1。
+  - `swap` 的成功路径、Esc 取消、确认框默认取消、超额输入的提示都正常。
+  - `chain --help` 和 `completions zsh` 正常。
+- 发现：
+  - `cargo fmt` 不进路由 B 的命令文件，因为它们的 `mod` 来自宏展开。Codex 用 `rustfmt --edition 2024` 直接格式化这些文件。eink-rs 的 `commands!` 文档还没写这一点。
+  - ink-rs 的输出只取树里第一个 `Static`，所以每个流命令只用一个 `Static`，标题和记录都在里面。
