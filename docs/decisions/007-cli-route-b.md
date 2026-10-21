@@ -1,8 +1,8 @@
 # CLI 框架：路由 B
 
 - 日期：2026-10-21
-- 状态：实施中
-- 提交：无
+- 状态：已实施
+- 提交：`fb0eb3f` feat(cli): generate commands from a directory
 - Brief：[cli-route-b](briefs/cli-route-b.md)
 
 ## 背景
@@ -47,3 +47,34 @@
   - 示例包的集成测试覆盖分派（叶、别名、带 index 的组带或不带子命令、嵌套组、不带 index 的组）和 index 给组的描述与别名。
   - `OUT_DIR` 检查由 worker 手动验证，不提交测试。
 - 集成（主 agent）：review，跑全量，`docs/design.md` 的 `cli` 一节加路由 B，更新 README，在 tmux 里运行示例，补本记录的结果。
+
+## 结果
+
+Codex 写了 `macros/src/fs_commands.rs` 的 `commands!`、`src/cli/mod.rs` 的再导出和 rustdoc、示例包 `examples/cli-routes/` 和测试：宏 crate 2 个单元测试（名字转换、报错规则表），示例包 3 个集成测试。报告没有发现 ink-rs 的缺口。
+
+主 agent 接受 worker 的以下偏离：
+
+- `Commands` derive 的注册函数从 `commands` 改名 `derive_commands`，给函数式宏让出名字；公开的 derive 名不变。
+- Rust 2024 的关键字 `gen` 用原始标识符。
+- 生成项的文档写成 `#[doc = concat!(..)]`，clap 不把它当成命令描述。
+- 元数据测试写 `<Cli as CommandFactory>::command()`：`Props` 生成的 `command` setter 和 trait 方法同名。
+
+worker 报告的行为：
+
+- 不带 index 的组不带子命令时，clap 报 `DisplayHelpOnMissingArgumentOrSubcommand`，打印 help，退出码 2。
+- 删掉示例的 build.rs 后编译报 `src/commands: OUT_DIR is unset; add a build.rs containing ...`，proc macro 展开时读得到 `OUT_DIR`。这个检查确认包有 build script，确认不了它输出了 `rerun-if-changed`。
+
+主 agent review 时把 `clap` 加进保留的文件名：生成的模块里有 `use ::eink_rs::cli::clap;`，`clap.rs` 会和它冲突。单元测试和 rustdoc 同步改。集成时 `cargo test --workspace --all-features` 122 个通过，clippy、fmt、无 feature 的 build 通过。`docs/design.md` 加「路由 B：目录即命令」一节，README 加示例的运行命令。
+
+tmux 会话 `eink-rs` 里运行 `cli-routes`：
+
+- `--help` 列出 deploy（别名 d）、domains（别名 dom）、team，退出码 0。
+- 不带命令时显示 `Deployment console` 和 `Deploy website to us`；`d docs --region eu --preview` 显示 `Deploy docs to eu (preview)`。
+- `domains --help` 列出 index 的 `--verbose` 和 add、list 两个子命令；`dom --verbose` 渲染 index；`domains list`、`domains add example.org` 渲染子命令。
+- `team` 打印 help，退出码 2；`team list`、`team projects list` 正常。
+- 新增 `src/commands/status.rs` 后 `cargo build`，`--help` 出现 status，`status` 正常渲染；删掉后重编，`status` 报未知子命令。
+
+两个环境问题，与本仓库代码无关：
+
+- 本机 fish 里的 `cargo` 经 mise 包装，rustc 外面套着编译缓存 `mbx-rustc`。新增命令文件后 cargo 判定要重编，缓存按上次的源文件命中，产物里没有新命令。rustup 的 cargo 正常。其他按源文件清单缓存 rustc 产物的工具可能有同样的问题，未验证。
+- 一次经这个包装的 `cargo run -p cli-routes` 渲染后没有退出。直接运行二进制 34 次、经包装的 `cargo run` 6 次，进程正常退出，没有复现。
