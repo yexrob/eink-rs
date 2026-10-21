@@ -118,10 +118,19 @@ pub fn run_from<C>(argv: impl IntoIterator<Item = impl Into<OsString> + Clone>) 
 where
     C: clap::Parser + Into<Element>,
 {
-    match prepare::<C>(argv) {
-        Ok(element) => finish(ink_rs::render(element, Options::default()).wait_until_exit()),
-        Err(code) => code,
-    }
+    launch::<C>(argv, |_| Options::default())
+}
+
+/// Parses process arguments and renders with the options `options` returns.
+///
+/// `options` receives the parsed root before it becomes an element, so a
+/// command can choose its own render options, such as the alternate screen.
+/// Completion and exit handling match [`run`].
+pub fn run_with<C>(options: impl FnOnce(&C) -> Options) -> ExitCode
+where
+    C: clap::Parser + Into<Element>,
+{
+    launch::<C>(std::env::args_os(), options)
 }
 
 /// Parses process arguments and renders with the Tokio driver until exit.
@@ -149,8 +158,8 @@ where
     C: clap::Parser + Into<Element>,
 {
     match prepare::<C>(argv) {
-        Ok(element) => finish(
-            ink_rs::tokio::render(element, Options::default())
+        Ok(root) => finish(
+            ink_rs::tokio::render(root.into(), Options::default())
                 .wait_until_exit()
                 .await,
         ),
@@ -158,15 +167,29 @@ where
     }
 }
 
-fn prepare<C>(
+fn launch<C>(
     argv: impl IntoIterator<Item = impl Into<OsString> + Clone>,
-) -> Result<Element, ExitCode>
+    options: impl FnOnce(&C) -> Options,
+) -> ExitCode
 where
     C: clap::Parser + Into<Element>,
 {
+    match prepare::<C>(argv) {
+        Ok(root) => {
+            let options = options(&root);
+            finish(ink_rs::render(root.into(), options).wait_until_exit())
+        }
+        Err(code) => code,
+    }
+}
+
+fn prepare<C>(argv: impl IntoIterator<Item = impl Into<OsString> + Clone>) -> Result<C, ExitCode>
+where
+    C: clap::Parser,
+{
     #[cfg(not(feature = "completion"))]
     {
-        parse_from::<C>(argv).map_err(clap_exit)
+        C::try_parse_from(argv).map_err(clap_exit)
     }
     #[cfg(feature = "completion")]
     {
@@ -197,9 +220,7 @@ where
             };
             return Err(code);
         }
-        C::from_arg_matches(&matches)
-            .map(Into::into)
-            .map_err(|error| clap_exit(error.format(&mut command)))
+        C::from_arg_matches(&matches).map_err(|error| clap_exit(error.format(&mut command)))
     }
 }
 
