@@ -1,0 +1,15 @@
+[package]
+name = "eink-rs"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+description = "Components and a CLI framework for ink-rs"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/yexrob/eink-rs"
+readme = "README.md"
+keywords = ["tui", "terminal", "cli", "components", "ink"]
+categories = ["command-line-interface"]
+exclude = ["/docs", "/CLAUDE.md", "/AGENTS.md", "/.gitignore", "/.github"]
+
+[dependencies]
+ink-rs = { version = "0.1.2", default-features = false, features = ["macros"] }
