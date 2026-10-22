@@ -175,9 +175,8 @@ fn demo(cx: &mut Scope, _: &()) -> Element {
     let app = cx.use_app();
     let window = cx.use_window_size();
     let current = state.get();
-    // Ticks land on the interval grid and those inside the paint window are
-    // skipped, so an interval equal to the window delivers about half its
-    // ticks. A 1 ms interval leaves the rate to `max_fps`.
+    // A tick held by the paint window goes out when the window opens, so an
+    // interval up to the window paints at `max_fps`; 1 ms covers every rate.
     let clock = cx.use_animation(AnimationOptions {
         interval: Duration::from_millis(1),
         active: current.running,
