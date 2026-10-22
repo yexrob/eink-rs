@@ -19,7 +19,39 @@ pub(crate) struct Cache;
 
 /// Renders a document: top-level blocks one blank line apart.
 pub(crate) fn render(source: &str, theme: &MarkdownTheme, cache: &RefCell<Cache>) -> Element {
+    render_numbered(source, theme, cache, None)
+}
+
+pub(crate) fn render_numbered(
+    source: &str,
+    theme: &MarkdownTheme,
+    cache: &RefCell<Cache>,
+    number: Option<u64>,
+) -> Element {
+    render_links(source, theme, cache, number, &Links::new())
+}
+
+pub(crate) type Links = std::collections::HashMap<String, (String, String)>;
+
+pub(crate) fn label(label: &str) -> String {
+    label
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_lowercase()
+}
+
+pub(crate) fn render_links(
+    source: &str,
+    theme: &MarkdownTheme,
+    cache: &RefCell<Cache>,
+    number: Option<u64>,
+    links: &Links,
+) -> Element {
     let mut builder = Builder {
+        source,
+        offset: 0,
+        number,
         theme,
         cache,
         stack: vec![Frame::new(Kind::Root)],
@@ -30,7 +62,15 @@ pub(crate) fn render(source: &str, theme: &MarkdownTheme, cache: &RefCell<Cache>
         html: None,
         table: None,
     };
-    for event in Parser::new_ext(source, options()) {
+    let callback = |link: pulldown_cmark::BrokenLink<'_>| {
+        links
+            .get(&label(&link.reference))
+            .map(|(url, title)| (url.clone().into(), title.clone().into()))
+    };
+    for (event, range) in
+        Parser::new_with_broken_link_callback(source, options(), Some(callback)).into_offset_iter()
+    {
+        builder.offset = range.start;
         builder.event(event);
     }
     builder.flush();
@@ -39,6 +79,9 @@ pub(crate) fn render(source: &str, theme: &MarkdownTheme, cache: &RefCell<Cache>
 }
 
 struct Builder<'a> {
+    source: &'a str,
+    offset: usize,
+    number: Option<u64>,
     theme: &'a MarkdownTheme,
     #[cfg_attr(not(feature = "markdown-highlight"), allow(dead_code))]
     cache: &'a RefCell<Cache>,
@@ -58,6 +101,7 @@ struct Builder<'a> {
 struct Frame {
     kind: Kind,
     children: Vec<Element>,
+    gap: bool,
 }
 
 impl Frame {
@@ -65,6 +109,7 @@ impl Frame {
         Self {
             kind,
             children: Vec::new(),
+            gap: false,
         }
     }
 }
@@ -74,12 +119,12 @@ enum Kind {
     Quote(Option<BlockQuoteKind>),
     List {
         next: Option<u64>,
-        loose: bool,
-        items: Vec<(String, Vec<Element>)>,
+        items: Vec<(String, Vec<Element>, bool)>,
     },
     Item {
         marker: String,
         task: Option<bool>,
+        gap: bool,
     },
     Footnote(String),
 }
@@ -150,17 +195,14 @@ impl Builder<'_> {
                 None => self.run(&html, dim()),
             },
             Event::InlineHtml(html) => self.run(&html, dim()),
-            Event::FootnoteReference(label) => self.run(
-                &format!("[^{label}]"),
-                Span {
-                    color: Some(self.theme.link_color),
-                    ..Span::default()
-                },
-            ),
+            Event::FootnoteReference(label) => self.run(&format!("[^{label}]"), Span::default()),
             Event::SoftBreak => self.run(" ", Span::default()),
             Event::HardBreak => self.run("\n", Span::default()),
             Event::Rule => {
                 self.flush();
+                if let Some(frame) = self.stack.last_mut() {
+                    frame.gap = blank_before(self.source, self.offset);
+                }
                 let rule = edge(View::new(), self.theme.rule_color).border_left(false);
                 self.push(rule.border_bottom(false).border_right(false).into());
             }
@@ -179,16 +221,24 @@ impl Builder<'_> {
     }
 
     fn start(&mut self, tag: Tag<'_>) {
+        if matches!(
+            tag,
+            Tag::Paragraph
+                | Tag::Heading { .. }
+                | Tag::List(_)
+                | Tag::CodeBlock(_)
+                | Tag::BlockQuote(_)
+                | Tag::HtmlBlock
+                | Tag::Table(_)
+        ) {
+            self.flush();
+            if let Some(frame) = self.stack.last_mut() {
+                frame.gap = blank_before(self.source, self.offset);
+            }
+        }
         match tag {
             Tag::Paragraph => {
                 self.flush();
-                let count = self.stack.len();
-                if count >= 2
-                    && matches!(self.stack[count - 1].kind, Kind::Item { .. })
-                    && let Kind::List { loose, .. } = &mut self.stack[count - 2].kind
-                {
-                    *loose = true;
-                }
             }
             Tag::Heading { level, .. } => {
                 self.flush();
@@ -217,14 +267,24 @@ impl Builder<'_> {
                 self.flush();
                 self.html = Some(String::new());
             }
-            Tag::List(start) => self.open(Kind::List {
-                next: start,
-                loose: false,
-                items: Vec::new(),
-            }),
+            Tag::List(start) => {
+                let next = if self.stack.len() == 1 {
+                    self.number.take().or(start)
+                } else {
+                    start
+                };
+                self.open(Kind::List {
+                    next,
+                    items: Vec::new(),
+                });
+            }
             Tag::Item => {
                 let marker = self.next_marker();
-                self.open(Kind::Item { marker, task: None });
+                self.open(Kind::Item {
+                    marker,
+                    task: None,
+                    gap: blank_before(self.source, self.offset),
+                });
             }
             Tag::FootnoteDefinition(label) => self.open(Kind::Footnote(label.to_string())),
             Tag::Table(alignments) => {
@@ -274,7 +334,7 @@ impl Builder<'_> {
                 self.spans.pop();
             }
             TagEnd::BlockQuote(_) => {
-                let Frame { kind, children } = self.close();
+                let Frame { kind, children, .. } = self.close();
                 if let Kind::Quote(kind) = kind {
                     let quote = self.quote(kind, children);
                     self.push(quote);
@@ -287,14 +347,14 @@ impl Builder<'_> {
             }
             TagEnd::List(_) => {
                 let Frame { kind, .. } = self.close();
-                if let Kind::List { loose, items, .. } = kind {
-                    let list = self.list(loose, items);
+                if let Kind::List { items, .. } = kind {
+                    let list = self.list(items);
                     self.push(list);
                 }
             }
             TagEnd::Item => {
-                let Frame { kind, children } = self.close();
-                let Kind::Item { marker, task } = kind else {
+                let Frame { kind, children, .. } = self.close();
+                let Kind::Item { marker, task, gap } = kind else {
                     return;
                 };
                 let marker = match task {
@@ -307,11 +367,11 @@ impl Builder<'_> {
                     ..
                 }) = self.stack.last_mut()
                 {
-                    items.push((marker, children));
+                    items.push((marker, children, gap));
                 }
             }
             TagEnd::FootnoteDefinition => {
-                let Frame { kind, children } = self.close();
+                let Frame { kind, children, .. } = self.close();
                 if let Kind::Footnote(label) = kind {
                     let note =
                         View::new()
@@ -384,6 +444,19 @@ impl Builder<'_> {
 
     fn push(&mut self, element: Element) {
         if let Some(frame) = self.stack.last_mut() {
+            let element = if matches!(frame.kind, Kind::Item { .. })
+                && !frame.children.is_empty()
+                && frame.gap
+            {
+                View::new()
+                    .flex_direction(FlexDirection::Column)
+                    .padding_top(1)
+                    .child(element)
+                    .into()
+            } else {
+                element
+            };
+            frame.gap = false;
             frame.children.push(element);
         }
     }
@@ -447,26 +520,24 @@ impl Builder<'_> {
             .unwrap_or_else(|| "-".into())
     }
 
-    fn list(&self, loose: bool, items: Vec<(String, Vec<Element>)>) -> Element {
-        let width = items
-            .iter()
-            .map(|(marker, _)| text_width(marker))
-            .max()
-            .unwrap_or(0)
-            + 1;
-        let gap = u16::from(loose);
+    fn list(&self, items: Vec<(String, Vec<Element>, bool)>) -> Element {
         column(
-            items.into_iter().map(|(marker, children)| {
-                View::new()
-                    .child(
-                        View::new()
-                            .width(cells(width))
-                            .flex_shrink(0.0)
-                            .child(Text::new(marker).color(self.theme.bullet_color)),
-                    )
-                    .child(column(children, gap).flex_grow(1.0).min_width(0))
-            }),
-            gap,
+            items
+                .into_iter()
+                .enumerate()
+                .map(|(index, (marker, children, gap))| {
+                    let width = text_width(&marker) + 1;
+                    View::new()
+                        .padding_top(u16::from(index > 0 && gap))
+                        .child(
+                            View::new()
+                                .width(cells(width))
+                                .flex_shrink(0.0)
+                                .child(Text::new(marker).color(self.theme.bullet_color)),
+                        )
+                        .child(column(children, 0).flex_grow(1.0).min_width(0))
+                }),
+            0,
         )
         .into()
     }
@@ -625,4 +696,15 @@ fn dim() -> Span {
 
 fn cells(count: usize) -> u16 {
     u16::try_from(count).unwrap_or(u16::MAX)
+}
+
+/// A source blank row before the line containing `offset`.
+pub(crate) fn blank_before(source: &str, offset: usize) -> bool {
+    let prefix = &source[..offset];
+    let Some(line) = prefix.rfind('\n') else {
+        return false;
+    };
+    let previous = &prefix[..line];
+    let previous = previous.rsplit('\n').next().unwrap_or("");
+    previous.trim().trim_matches('>').trim().is_empty()
 }

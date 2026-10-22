@@ -16,6 +16,9 @@ Components, a CLI framework and an in-app router for
   `#[derive(Routes)]` or generated from a directory with `routes!`, a history
   with push, replace and back, nested layouts with `Outlet`, typed path
   parameters, and argv as the initial route.
+- **`eink_rs::markdown`** renders Markdown and streams model replies: finished
+  pieces go to the scrollback through `Static`, the live tail repaints, and
+  `markdown-highlight` colors fenced code on a background thread.
 
 | Feature | Enables |
 |---|---|
@@ -23,6 +26,8 @@ Components, a CLI framework and an in-app router for
 | `router` | `eink_rs::router`, `#[derive(Routes)]` and `routes!`; with `cli`, `RouteArgs` |
 | `completion` | `cli` plus a `completions <SHELL>` subcommand |
 | `tokio` | `cli` plus async entry points on ink-rs's tokio driver |
+| `markdown` | `eink_rs::markdown` and pulldown-cmark |
+| `markdown-highlight` | `markdown` plus code highlighting with syntect |
 
 No feature is on by default; `eink_rs::ui` needs none.
 
@@ -74,6 +79,14 @@ terminal coding agents do: finished turns go to the scrollback through
 cargo run -p quill
 cargo run -p quill -- "fix the failing test"
 cargo run -p quill -- exec "plan a refactor"
+```
+
+`markdown` streams a reply the way a chat client shows it, from a canned
+answer or a file:
+
+```sh
+cargo run --example markdown --features markdown-highlight
+cargo run --example markdown --features markdown-highlight -- --file README.md --rate 4096
 ```
 
 ## License

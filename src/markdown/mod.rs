@@ -1,19 +1,22 @@
-//! Markdown rendering for text that arrives in pieces.
+//! Markdown documents and streamed model replies.
 //!
-//! [`Markdown`] renders a document with [pulldown-cmark](https://docs.rs/pulldown-cmark):
-//! CommonMark plus GitHub tables, task lists, strikethrough, footnotes and
-//! alerts. [`MarkdownStream`] splits a growing source into finished top-level
-//! blocks and a live tail. Put the finished blocks in a
-//! [`Static`](ink_rs::Static) so they enter terminal history once, and render
-//! the tail with [`Markdown::streaming`] set, which hides half-typed markers
-//! and closes open inline styles.
+//! [`use_markdown_stream`] owns one model. Pass an app handle to
+//! [`MarkdownStreamHandle::sender`], send deltas from a producer thread, and
+//! put each [`MarkdownPiece`] in the application's `Static` history.
+//! [`MarkdownTail`] renders the remaining live region. Pieces carry spacing;
+//! stack them without an extra gap. [`MarkdownStream`] is the headless layer.
 //!
-//! With the `markdown-highlight` feature, fenced code is highlighted with
-//! [syntect](https://docs.rs/syntect) and the syntaxes and themes of
-//! [bat](https://github.com/sharkdp/bat).
+//! The `markdown-highlight` feature highlights streamed top-level fences on
+//! one background thread. [`Markdown`] highlights finished documents with a
+//! synchronous line cache. Later link definitions cannot change emitted pieces.
+//! Footnote references keep the surrounding text color so a later definition
+//! does not recolor an emitted reference. Unknown code languages use the plain
+//! code color; their first lines wait for the worker to identify the language.
 
 #[cfg(feature = "markdown-highlight")]
 mod highlight;
+mod hook;
+mod piece;
 mod render;
 mod settle;
 mod stream;
@@ -28,7 +31,11 @@ use pulldown_cmark::Options;
 
 use crate::ui::use_theme;
 
-pub use stream::MarkdownStream;
+pub use hook::{
+    MarkdownProgress, MarkdownSender, MarkdownStreamHandle, MarkdownTail, use_markdown_stream,
+};
+pub use piece::MarkdownPiece;
+pub use stream::{MarkdownStream, MarkdownStreamOptions};
 pub use theme::MarkdownTheme;
 
 /// A rendered Markdown document.

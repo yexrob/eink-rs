@@ -69,7 +69,7 @@ pub(crate) fn highlight(
                 .highlight_line(source, syntaxes)
                 .ok()?
                 .into_iter()
-                .map(|(style, piece)| (style, piece.trim_end_matches('\n').to_owned()))
+                .map(|(style, piece)| (style, piece.trim_end_matches(['\r', '\n']).to_owned()))
                 .collect();
             state = lines.state();
             texts.push(text(&spans));
@@ -86,7 +86,7 @@ pub(crate) fn highlight(
     })
 }
 
-fn text(spans: &[(Style, String)]) -> Text {
+pub(crate) fn text(spans: &[(Style, String)]) -> Text {
     if spans.iter().all(|(_, piece)| piece.is_empty()) {
         return Text::new(" ");
     }
@@ -109,4 +109,96 @@ fn color(color: syntect::highlighting::Color) -> Option<Color> {
         1 => None,
         _ => Some(Color::Rgb(color.r, color.g, color.b)),
     }
+}
+
+pub(crate) type Spans = Vec<(Style, String)>;
+
+pub(crate) struct ResultLine {
+    pub id: u64,
+    pub spans: Option<Spans>,
+}
+
+pub(crate) enum Work {
+    Line {
+        block: u64,
+        id: u64,
+        language: String,
+        theme: String,
+        source: String,
+        reply: std::sync::mpsc::Sender<ResultLine>,
+        wake: Option<super::hook::Wake>,
+        unknown: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    },
+    Close(u64),
+}
+
+pub(crate) fn submit(work: Work) {
+    use std::{collections::HashMap, sync::mpsc, thread};
+    static WORKER: OnceLock<mpsc::Sender<Work>> = OnceLock::new();
+    let sender = WORKER.get_or_init(|| {
+        let (tx, rx) = mpsc::channel();
+        thread::Builder::new()
+            .name("markdown-highlight".into())
+            .spawn(move || {
+                let syntaxes = two_face::syntax::extra_newlines();
+                let themes = two_face::theme::extra();
+                let mut blocks = HashMap::new();
+                while let Ok(work) = rx.recv() {
+                    match work {
+                        Work::Close(block) => {
+                            blocks.remove(&block);
+                        }
+                        Work::Line {
+                            block,
+                            id,
+                            language,
+                            theme,
+                            source,
+                            reply,
+                            wake,
+                            unknown,
+                        } => {
+                            let name = EmbeddedLazyThemeSet::theme_names()
+                                .iter()
+                                .find(|name| name.as_name() == theme)
+                                .copied()
+                                .unwrap_or(EmbeddedThemeName::Ansi);
+                            let theme = themes.get(name);
+                            let state = blocks.entry(block).or_insert_with(|| {
+                                syntaxes
+                                    .find_syntax_by_token(&language)
+                                    .map(|syntax| HighlightLines::new(syntax, theme).state())
+                            });
+                            if state.is_none() {
+                                unknown.store(true, std::sync::atomic::Ordering::Release);
+                            }
+                            let spans = state.take().and_then(|(highlight, parse)| {
+                                let mut lines = HighlightLines::from_state(theme, highlight, parse);
+                                let result =
+                                    lines.highlight_line(&source, &syntaxes).ok().map(|parts| {
+                                        parts
+                                            .into_iter()
+                                            .map(|(style, text)| {
+                                                (
+                                                    style,
+                                                    text.trim_end_matches(['\r', '\n']).to_owned(),
+                                                )
+                                            })
+                                            .collect()
+                                    });
+                                *state = Some(lines.state());
+                                result
+                            });
+                            let _ = reply.send(ResultLine { id, spans });
+                            if let Some(wake) = wake {
+                                wake.notify();
+                            }
+                        }
+                    }
+                }
+            })
+            .expect("start Markdown highlighter");
+        tx
+    });
+    let _ = sender.send(work);
 }

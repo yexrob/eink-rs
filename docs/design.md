@@ -1,17 +1,18 @@
 # eink-rs 设计
 
-eink-rs 建在 [ink-rs](https://github.com/yexrob/ink-rs) 上，有两部分：
+eink-rs 建在 [ink-rs](https://github.com/yexrob/ink-rs) 上，有四部分：
 
 - `ui`：移植 Ink UI 2.0.0 的 13 个组件和 `useSpinner`。
 - `cli`：参照 Pastel 4.0.1 的 CLI 框架，命令用 clap 声明，由组件渲染。
 - `router`：参照 React Router 的应用内路由，路由表是 enum，可以从目录生成。
+- `markdown`：Markdown 渲染和模型回复的流式显示，定稿的段进 `Static`，尾部重绘。
 
 设计怎么来的见 [decisions/](decisions/README.md)。
 
 ## 结构
 
 - workspace 的根 package 是 `eink-rs`。proc macro 在 Rust 里要独立成 crate：成员 `macros/`（`eink-rs-macros`）放 `Commands`、`Routes` 两个 derive 和 `routes!`。成员 `examples/file-routes/` 是目录路由的示例包，`examples/ship/` 是组合 ui、cli 和 router 的部署控制台示例包，`examples/quill/` 是内联渲染的编码助手示例包，都不发布。
-- `ui` 只依赖 ink-rs。feature 默认都不开：`cli` 加 clap 和 derive，`router` 加路由和它的宏，`completion` 加 clap_complete，`tokio` 加异步入口并开 ink-rs 的 `tokio`；后两个都带上 `cli`。只用组件的项目不编译 clap。
+- `ui` 只依赖 ink-rs。feature 默认都不开：`cli` 加 clap 和 derive，`router` 加路由和它的宏，`completion` 加 clap_complete，`tokio` 加异步入口并开 ink-rs 的 `tokio`；后两个都带上 `cli`。`markdown` 加 pulldown-cmark，`markdown-highlight` 加 syntect 和 two-face，带上 `markdown`。只用组件的项目不编译 clap。
 - 依赖 crates.io 上的 ink-rs，关掉它的默认 feature，开 `macros`。缺的通用原语加进 ink-rs，不在这里绕过。
 
 ## ui
@@ -133,3 +134,54 @@ Ink UI 的主题是一组函数，返回任意 Box/Text 属性，用 deepmerge �
 ### 测试
 
 `tests/router.rs` 测解析和打印、历史、布局与页面的生命周期、参数，以及开 `cli` 时的 argv、退出码和子命令优先。`macros` 的单元测试覆盖路径解析、匹配顺序、derive 的报错和目录规划的各条报错。`examples/file-routes/tests/routes.rs` 测目录生成的 enum 和两层布局的渲染。`examples/ship/tests/ship.rs` 测每条路由能渲染和 `status` 的退出码。`examples/quill/tests/quill.rs` 测一轮带审批的交互和 `exec` 的退出码。
+
+## markdown
+
+pulldown-cmark 0.13 解析，开表格、删除线、任务列表、脚注和 GFM 的提示块。讨论见 [016](decisions/016-markdown-stream.md) 和 [018](decisions/018-markdown-stream-formal.md)。
+
+### 三层
+
+- `MarkdownStream` 是 headless 的模型：`push` 追加文本，`finish` 结束，`tick` 匀速揭示，`take_pieces` 取定稿的段。它不依赖 UI，测试和压测用它。
+- `use_markdown_stream(cx, options, on_piece)` 把模型放进组件，返回 `MarkdownStreamHandle`：`sender(app)` 给出线程安全的 `MarkdownSender`，`MarkdownTail` 渲染尾部，`progress` 给出计数，`set_pacing` 和 `reset` 改设置、开始新的一次流。
+- `Markdown` 组件渲染整篇文档。主题 `MarkdownTheme` 从 `Palette` 生成，规则同 `ui`。
+
+### 定稿
+
+段在输出时定稿：之后到达的文本不改变它的渲染。
+
+- 顶层围栏代码块：开头一段，显示语言标签；每个写完的内容行一段；结束围栏不输出。
+- 顶层列表：每个顶层项一段，下一项或下一个顶层块开始时输出。一项按单独的文档渲染，序号取列表首项的序号加项的下标。
+- 表格整表一段；其余顶层块各一段。
+- 每段自带前面的空行：流的第一段为 0，顶层块之前为 1，列表项之间看源码里有没有空行。应用按顺序叠起段，不加间距，结果和整篇交给 `Markdown` 相同。
+- 例外：块之后才到的链接引用定义作用不到这个块。脚注引用用正文的颜色，后到的定义不改变已输出的引用。
+
+### 尾部
+
+尾部是最后一个未定稿的块，加上等高亮的代码行。`MarkdownTail` 的 props 是模型的计数，计数不变时跳过重渲染。
+
+- 补齐（`settle`，默认开）：没换行的半行按写完的样子显示，未闭合的行内标记临时补上结束符，不写进源码；说不准的块标记等所在的行写完后显示。
+- 代码块的尾部画最后一屏的行。ink-rs 的非全屏模式在动态区高过屏幕时从顶部裁掉，多画的行看不见。
+- 每帧的开销随尾部的长度增长。列表项里的长代码块、长表格、长段落写完前留在尾部，是已知限制，数字见 018 的结果。
+
+### 发送和唤醒
+
+- 模型放在 `State` 里。生产者在任意线程经 `MarkdownSender::push` 发文本，一批合成一次 `AppHandle::update`：UI 线程处理这批之前到达的文本进同一批。
+- `sender(app)` 用调用方的 `AppHandle`。发送端在，应用不会自然结束；`finish` 或丢掉全部发送端后可以结束。hook 不持有 `AppHandle`，空闲时不留唤醒源。
+- `reset` 换一个空的模型，代号加一，旧的发送端发来的文本被忽略。
+- 匀速揭示（`pacing`）打开时，hook 的动画时钟在有积压时运行，每帧揭示积压的一份，在 `pacing` 给的时间内赶上；关掉时文本在到达的那一帧显示。
+- `on_piece` 在 UI 线程、绘制前调用，这时模型被借用：回调里不能调用这个流的 handle。
+
+### 高亮
+
+`markdown-highlight` 用 syntect 的纯 Rust 正则后端，语法和主题取 two-face（bat 的一套）。默认主题 `ansi`，颜色跟随终端的 16 色。
+
+- 流里顶层代码块的行交给一个后台线程高亮，结果回来后这一行定稿。语法第一次编译不占 UI 线程。
+- 不认识的语言用代码块的纯色；它的头几行等后台线程认出语言后输出。
+- `Markdown` 组件和列表项、引用里的代码块在 UI 线程高亮，按行缓存。
+
+### 测试
+
+`tests/markdown.rs` 有两个测试：
+
+- 29 篇文档按 5 种切法分块推送，匀速开和关，80 和 40 列，叠起来的段和整篇渲染的结果相同。
+- hook 在非交互模式下挂载，生产者线程推完一篇回答：输出和整篇相同，结束后没有渲染。
