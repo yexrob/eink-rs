@@ -1,8 +1,8 @@
 # Button、受控的 TextInput 和 Select、焦点环
 
 - 日期：2026-10-22
-- 状态：实施中
-- 提交：无
+- 状态：已实施
+- 提交：`7375eed` feat(ui): add Button, FocusRing, and controlled TextInput and Select
 - Brief：[controls](briefs/controls.md)；需求：[bingo-controls](briefs/bingo-controls.md)
 
 ## 背景
@@ -47,3 +47,15 @@ bingo 按 Claude Code 的 `ui.render` 渲染 mod 和插件返回的元素树：�
 一个 Codex worker，worktree `wt/eink-controls`，不提交，不改文档。brief 见 [controls](briefs/controls.md)：新增 `src/ui/button.rs`、`src/ui/focus_ring.rs`；改 `text_input.rs`、`input.rs`、`select.rs`、`option_list.rs`、`multi_select.rs`、`mod.rs`。测试按 brief 的规则逐条：环的循环、停用、Esc、受控提议、两环互不影响；插入和删除；自动聚焦；方向键；热键冲突；受控 TextInput 的同批两键；受控 Select 的 `on_select`、数字键、描述；Button 的画法；bingo 要求的集成用例。现有的 Select 和 TextInput 测试不改。验收：fmt；clippy 两组 feature；`--lib`；brief 列出的测试文件。
 
 主 agent 集成：review，提交，全量测试，`docs/design.md` 的 ui 一节，在 tmux `ink-rs` 会话里跑示例核对，补结果，删 worktree。进 0.2.2 之后的版本。
+
+## 结果
+
+- `7375eed`：`ui::Button`、`ButtonTheme`、`ButtonVariant`；`ui::FocusRing`、`RingFocus { Managed, Key(String), None }`、`RingItem`、`Claims`、`use_ring_focus`；`TextInput` 和 `Select` 加 `value`、`id`、`auto_focus`，`Select` 加 `on_select`、`number_hotkeys`；`SelectOption::description`，MultiSelect 共用。design.md 加「受控组件」「焦点环」两节。
+- 成员表是环里的 `Rc<RefCell<Members>>`，成员在 layout effect 里登记、cleanup 里移除，移除时留下末次测得的位置。worker 报告无偏离，没有 ink-rs 的缺口。
+- 主 agent review 时改了两处：
+  - 受控 TextInput 被宿主拒绝时，光标留在原处；worker 的实现把拒绝和替换同等处理，光标跳到末尾。乐观值之外记下上一帧的状态来区分两者；`ignored_text_changes_keep_host_value_and_each_batch_starts_from_it` 改成在中间编辑，锁住这条。
+  - `FocusRing` 返回 fragment，不包 `View`，环不改变宿主的布局。
+- 测试：`tests/focus_ring.rs` 11 例，`tests/controlled_inputs.rs` 6 例，`tests/button.rs` 3 例；现有的 Select、TextInput 测试未改。
+- 全量：fmt、两组 feature 的 clippy、`cargo test --workspace --all-features` 159 个测试通过。
+- 手动核对（tmux `ink-rs` 会话，`examples/focus-ring.rs`）：自动聚焦到 Apply；Enter 按下；Tab、Shift+Tab 循环；方向键在按钮间走环；输入框获焦时打 `a` 输入字符，不按按钮；Select 的方向键和 Enter、数字热键；`r` 热键重置；Esc 退出。
+- 提交在 `wt/controls` 分支上做成，rebase 到 029 之后合入 main。发 0.2.2 前主 agent 问带哪些内容，用户选「带上控件、Composer、Code (Recommended)」，进 0.2.2。
