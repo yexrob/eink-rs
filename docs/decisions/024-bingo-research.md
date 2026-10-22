@@ -1,7 +1,7 @@
 # 调研 bingo 需要的 eink-rs 改动
 
 - 日期：2026-10-22
-- 状态：实施中
+- 状态：已实施
 - 提交：无
 - Brief：[bingo-research](briefs/bingo-research.md)；需求：[bingo-release-markdown](briefs/bingo-release-markdown.md)、[bingo-composer](briefs/bingo-composer.md)、[bingo-controls](briefs/bingo-controls.md)、[bingo-code](briefs/bingo-code.md)
 
@@ -48,3 +48,13 @@ bingo 是建在 ink-rs 和 eink-rs 上的编码 agent。它的会话 bingo-refac
 - **code**：高亮线程的 API；`Code` 的位置和 feature；Markdown 是否复用它；diff 的解析、配色和跨行的高亮；折行和截断；2000 行的开销。
 
 调研交回后，主 agent 把这四项的方案和 ink-rs 的三项合在一轮交给用户；谈定后各开实施记录。
+
+## 结果
+
+四份报告交回，在 `<scratchpad>/research/bingo/`。主 agent 把方案和 ink-rs 的三项合在一轮交给用户，用户的选择：
+
+- 版本：「不拆 tokio，发 0.2.2 (Recommended)」。bingo 会话确认不需要拆：它自己开 ink-rs 的 `tokio`，eink-rs 开 `markdown` 和 `markdown-highlight`。主 agent 写编译检查确认 `MarkdownSender` 是 `Send + Sync`。v0.2.1 之后 `src` 的改动是新增。决策里「下一版是 0.3.0」「`tokio = ["ink-rs/tokio"]`」两条作废：下一版是 0.2.2，带 markdown 模块和列表项里代码块的按行定稿，`tokio` feature 不变。
+- 原语：「加两个 (Recommended)」，`use_color_level` 和锚定节点的光标进 ink-rs 0.1.7（ink-rs 的记录 074），Code 和 Composer 用它们。
+- 焦点顺序：「你问问bingo那个session 看看应该用哪个？」，结果见 026。
+
+实施记录：[025](025-list-fence.md) 列表项代码块、[026](026-controls.md) 控件、027 Composer、028 Code，以及 [023](023-image.md) 图片。027、028 和 023 等 ink-rs 的 074 合入后派出。
