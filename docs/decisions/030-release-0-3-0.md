@@ -1,8 +1,8 @@
 # 发布 0.3.0
 
 - 日期：2026-10-22
-- 状态：进行中
-- 提交：
+- 状态：已实施
+- 提交：`a2236bd` chore: release 0.3.0
 - Brief：无，主 agent 自己做
 
 ## 背景
@@ -42,3 +42,9 @@
 7. 告诉 bingo 会话把依赖改为 `"0.3"`。
 
 ## 结果
+
+- 提交顺序：本记录 `ed12a9c`；`833a91a` 依赖升到 ink-rs 0.1.7（含三个示例的 `Cargo.toml`）；`d6ecba8`、`b8e4289` Composer 和 027 的结果；`6dd9107`、`5645843` Code 和 028 的结果；`a2236bd` 升版本号。026 的 `7375eed`、`6e25cfc` 在本记录之前合入。
+- 本地全量：fmt；clippy 的 `--all-features`、无 feature、`markdown`、`highlight` 四组通过（`markdown` 和 `highlight` 第一轮失败、没有留下输出，和图片 worktree 的编译同时进行，重跑通过）；`--workspace --all-features` 179 个、无 feature 152 个、`--features markdown --test markdown` 3 个测试通过；`cargo doc` 带 `-D warnings` 通过。`cargo package -p eink-rs` 的文件表有 90 个文件，不含 `docs/`，打包编译通过；`cargo publish --dry-run` 通过。
+- main 推送到 `a2236bd`（`f2afa96..a2236bd`），CI run 39769713919 的 4 个 job 通过。
+- `v0.3.0` 标签推送；eink-rs 0.3.0 发布到 crates.io，依赖 ink-rs 0.1.7 和 eink-rs-macros 0.2.0。
+- 024 的结果补了一行，指向本记录。bingo 会话回复它当前不依赖 ink-rs 和 eink-rs，接入时写 `ink-rs = "0.1.7"`、`eink-rs = "0.3"`。
