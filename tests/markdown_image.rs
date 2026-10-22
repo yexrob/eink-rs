@@ -180,8 +180,8 @@ fn tall_inline_image_splits_the_paragraph() {
     let frame = plain(&app.live_frame());
     let lines: Vec<_> = frame.lines().collect();
     assert_eq!(lines.len(), 5);
-    assert_eq!(lines[0].trim(), "before");
-    assert_eq!(lines[4].trim(), "after");
+    assert_eq!(lines[0].trim_end(), "before");
+    assert_eq!(lines[4].trim_end(), "after");
     assert!(
         lines[1..4]
             .iter()

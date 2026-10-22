@@ -84,6 +84,8 @@ pub(crate) fn render_document(
         table: None,
         #[cfg(feature = "markdown-image")]
         images,
+        #[cfg(feature = "markdown-image")]
+        after_image: false,
     };
     let callback = |link: pulldown_cmark::BrokenLink<'_>| {
         links
@@ -147,6 +149,9 @@ struct Builder<'a> {
     table: Option<Table>,
     #[cfg(feature = "markdown-image")]
     images: &'a mut super::images::Images,
+    /// Whether the paragraph's text resumes below a block image, which drops its leading spaces.
+    #[cfg(feature = "markdown-image")]
+    after_image: bool,
 }
 
 struct Frame {
@@ -535,8 +540,11 @@ impl Builder<'_> {
             self.push(inline.text.into());
         }
         #[cfg(feature = "markdown-image")]
-        for (_, start) in &mut self.links {
-            *start = 0;
+        {
+            for (_, start) in &mut self.links {
+                *start = 0;
+            }
+            self.after_image = false;
         }
     }
 
@@ -576,6 +584,7 @@ impl Builder<'_> {
             let inline = self.inline.get_or_insert_default();
             inline.plain.push_str(&" ".repeat(placement.size.columns));
             inline.text = std::mem::take(&mut inline.text).child(text);
+            self.after_image = false;
         } else {
             if self
                 .inline
@@ -590,6 +599,7 @@ impl Builder<'_> {
                     .flex_shrink(0.0)
                     .into(),
             );
+            self.after_image = true;
         }
         true
     }
@@ -602,6 +612,17 @@ impl Builder<'_> {
 
     /// Appends text in the current style, with `extra` applied on top.
     fn run(&mut self, content: &str, extra: Span) {
+        #[cfg(feature = "markdown-image")]
+        let content = if self.after_image {
+            let content = content.trim_start();
+            if content.is_empty() {
+                return;
+            }
+            self.after_image = false;
+            content
+        } else {
+            content
+        };
         let span = self.spans.last().cloned().unwrap_or_default();
         let inline = self.inline.get_or_insert_default();
         inline.plain.push_str(content);
