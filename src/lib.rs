@@ -11,6 +11,8 @@
 
 #[cfg(feature = "cli")]
 pub mod cli;
+#[cfg(feature = "markdown")]
+pub mod markdown;
 #[cfg(feature = "router")]
 pub mod router;
 pub mod ui;
