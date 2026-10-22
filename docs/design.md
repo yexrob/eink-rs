@@ -2,7 +2,7 @@
 
 eink-rs 建在 [ink-rs](https://github.com/yexrob/ink-rs) 上，有四部分：
 
-- `ui`：移植 Ink UI 2.0.0 的 13 个组件和 `useSpinner`。
+- `ui`：移植 Ink UI 2.0.0 的 13 个组件和 `useSpinner`，加上显示源码和 diff 的 `Code`。
 - `cli`：参照 Pastel 4.0.1 的 CLI 框架，命令用 clap 声明，由组件渲染。
 - `router`：参照 React Router 的应用内路由，路由表是 enum，可以从目录生成。
 - `markdown`：Markdown 渲染和模型回复的流式显示，定稿的段进 `Static`，尾部重绘。
@@ -12,7 +12,7 @@ eink-rs 建在 [ink-rs](https://github.com/yexrob/ink-rs) 上，有四部分：
 ## 结构
 
 - workspace 的根 package 是 `eink-rs`。proc macro 在 Rust 里要独立成 crate：成员 `macros/`（`eink-rs-macros`）放 `Commands`、`Routes` 两个 derive 和 `routes!`。成员 `examples/file-routes/` 是目录路由的示例包，`examples/ship/` 是组合 ui、cli 和 router 的部署控制台示例包，`examples/quill/` 是内联渲染的编码助手示例包，都不发布。
-- `ui` 只依赖 ink-rs。feature 默认都不开：`cli` 加 clap 和 derive，`router` 加路由和它的宏，`completion` 加 clap_complete，`tokio` 加异步入口并开 ink-rs 的 `tokio`；后两个都带上 `cli`。`markdown` 加 pulldown-cmark，`highlight` 加 syntect 和 two-face，`markdown-highlight` 合并 `markdown` 和 `highlight`。只用组件的项目不编译 clap。
+- `ui` 只依赖 ink-rs，`Code` 在开 `highlight` 时着色。feature 默认都不开：`cli` 加 clap 和 derive，`router` 加路由和它的宏，`completion` 加 clap_complete，`tokio` 加异步入口并开 ink-rs 的 `tokio`；后两个都带上 `cli`。`markdown` 加 pulldown-cmark，`highlight` 加 syntect 和 two-face，`markdown-highlight` 合并 `markdown` 和 `highlight`。只用组件的项目不编译 clap。
 - 依赖 crates.io 上的 ink-rs，关掉它的默认 feature，开 `macros`。缺的通用原语加进 ink-rs，不在这里绕过。
 
 ## ui
@@ -103,9 +103,21 @@ ink-rs 的焦点全应用一份，按注册顺序编号，不能限定子树。`
 - ProgressBar 的值为 NaN 时按 0 算。
 - StatusMessage 和 Alert 按 Ink UI 标成 `test.failing` 的测试实现。
 
+### Code
+
+`Code` 不来自 Ink UI，对应 bingo 元素词表里的 `Code`：带行号的源码，或统一 diff。开 `highlight` 时着色，不开时用纯色，diff 可用。
+
+- 源码：给了 `start_line` 时画行号栏，宽度取最大行号的位数，右对齐；续行的行号栏留空。
+- diff：解析文件头、hunk 头、上下文、增删行和「No newline」提示，两列行号取自 hunk 头。增删行带 `+`、`-`，前景色取 `success`、`error`；真彩和 256 色下画整行的暗绿、暗红底色，16 色和无色时不画底色，靠前景色表意。文件头、hunk 头和上下文变暗。
+- 每个 hunk 还原出旧文本和新文本，按整块高亮：删除行取旧块，新增行和上下文取新块，跨行注释的颜色和整个文件里相同。
+- diff 解析失败（没有 hunk、计数不符、头格式错、未知前缀）时按纯代码显示，按 `start_line` 编号，`on_fallback` 对每份源码调用一次。截断的 hunk 不做容错解析。
+- `CodeWrap::Wrap` 用 `TextWrap::Hard`，保留行首缩进；`TruncateEnd` 在行尾加省略号。
+- 64 行以内在 UI 线程高亮，用共享的行缓存；超过 64 行的第一帧是纯色，后台线程的结果经 `AppHandle::update` 写回后重绘。`Static` 里的内容输出一次，宿主把小源码放进去时第一帧要带颜色。源码、语言或主题变化和卸载后，排着的后台结果作废。
+- 开销（release，100 列）：64 行源码的第一帧 49 ms，含语法集在 UI 线程的第一次加载，之后重渲染 0.5 ms。2000 行源码的第一帧 74 ms，后台高亮 360 ms 后到达；props 不变时重渲染 28 ms，一个 2000 行的 `Text` 是 22 ms，开销在布局和输出。
+
 ### 测试
 
-`tests/` 下每个组件一个文件，移植 Ink UI 的测试。组件用 `ink_rs::testing::render` 渲染，期望值是 ink-rs 的元素树，用 `tests/support` 的 `frame` 按同样的设置（100 列、基本色）渲染，比较带颜色的帧。期望和 Ink UI 不同的地方有注释；改掉的行为里 Ink UI 测试没覆盖的，各加一个测试。
+`tests/` 下每个组件一个文件，移植 Ink UI 的测试。组件用 `ink_rs::testing::render` 渲染，期望值是 ink-rs 的元素树，用 `tests/support` 的 `frame` 按同样的设置（100 列、基本色）渲染，比较带颜色的帧。期望和 Ink UI 不同的地方有注释；改掉的行为里 Ink UI 测试没覆盖的，各加一个测试。`tests/code.rs` 测行号对齐、两个 hunk、窄宽度下的换行和截断、坏 diff 的回退和基本色下不画底色；跨行注释的颜色在 `src/ui/code.rs` 里测。
 
 
 ## cli
@@ -217,6 +229,7 @@ pulldown-cmark 0.13 解析，开表格、删除线、任务列表、脚注和 GF
 - 流里顶层代码块的行交给一个后台线程高亮，结果回来后这一行定稿。语法第一次编译不占 UI 线程。
 - 不认识的语言用代码块的纯色；它的头几行等后台线程认出语言后输出。
 - `Markdown` 组件和列表项、引用里的代码块在 UI 线程高亮，按行缓存。
+- `Code` 64 行以内在 UI 线程高亮，超过的交给后台线程，见 ui 的「Code」一节。
 - 超过 1000 字节的行用主题的默认样式，不推进解析状态，下一行从它前面的状态开始，和 Shiki 相同。syntect 处理 1000 字节的一行不超过 6 ms，耗时增长比长度快。两条路径共用按行高亮的函数，流式和整篇的结果一致。
 - 流被丢弃后，后台线程跳过它排着的行。
 

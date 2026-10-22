@@ -12,7 +12,6 @@
 #[cfg(feature = "cli")]
 pub mod cli;
 #[cfg(feature = "highlight")]
-#[cfg_attr(not(feature = "markdown-highlight"), allow(dead_code))]
 pub(crate) mod highlight;
 #[cfg(feature = "markdown")]
 pub mod markdown;

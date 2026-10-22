@@ -20,7 +20,6 @@ fn syntaxes() -> &'static SyntaxSet {
 #[derive(Clone, PartialEq, Eq)]
 pub(crate) enum Lang {
     Token(String),
-    #[allow(dead_code)]
     File(String),
 }
 
@@ -197,7 +196,7 @@ pub(crate) fn submit(work: Work) {
     let sender = WORKER.get_or_init(|| {
         let (tx, rx) = mpsc::channel();
         thread::Builder::new()
-            .name("markdown-highlight".into())
+            .name("eink-highlight".into())
             .spawn(move || {
                 let syntaxes = two_face::syntax::extra_newlines();
                 let themes = two_face::theme::extra();
@@ -249,7 +248,7 @@ pub(crate) fn submit(work: Work) {
                     }
                 }
             })
-            .expect("start Markdown highlighter");
+            .expect("start highlighter");
         tx
     });
     let _ = sender.send(work);

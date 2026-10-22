@@ -7,7 +7,8 @@ Components, a CLI framework and an in-app router for
 - **`eink_rs::ui`** ports the components of
   [Ink UI](https://github.com/vadimdemedes/ink-ui): text, email, password and
   confirm inputs, select and multi-select, spinner, progress bar, badge, status
-  message, alert, and ordered and unordered lists.
+  message, alert, and ordered and unordered lists. `Code` shows numbered
+  source or a unified diff.
 - **`eink_rs::cli`** is a CLI framework modeled on
   [Pastel](https://github.com/vadimdemedes/pastel): commands declared as clap
   types, each rendered by a component.
@@ -27,7 +28,7 @@ Components, a CLI framework and an in-app router for
 | `completion` | `cli` plus a `completions <SHELL>` subcommand |
 | `tokio` | `cli` plus async entry points on ink-rs's tokio driver |
 | `markdown` | `eink_rs::markdown` and pulldown-cmark |
-| `highlight` | code highlighting with syntect |
+| `highlight` | code highlighting with syntect, used by `Code` |
 | `markdown-highlight` | `markdown` plus `highlight` |
 
 No feature is on by default; `eink_rs::ui` needs none.

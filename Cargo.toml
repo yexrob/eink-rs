@@ -66,3 +66,7 @@ required-features = ["markdown"]
 
 [[example]]
 name = "focus-ring"
+
+[[example]]
+name = "code"
+required-features = ["highlight"]

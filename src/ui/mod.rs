@@ -11,8 +11,10 @@
 mod alert;
 mod badge;
 mod button;
+mod code;
 mod composer;
 mod confirm_input;
+pub(crate) mod diff;
 mod email_input;
 mod focus_ring;
 mod input;
@@ -31,11 +33,13 @@ mod unordered_list;
 pub use alert::{Alert, AlertTheme};
 pub use badge::{Badge, BadgeTheme};
 pub use button::{Button, ButtonTheme, ButtonVariant};
+pub use code::{Code, CodeFormat, CodeTheme, CodeWrap};
 pub use composer::{
     Caret, Composer, ComposerAction, ComposerState, Direction, Edit, Reduced, composer_caret,
     reduce_composer,
 };
 pub use confirm_input::{ConfirmChoice, ConfirmInput, ConfirmInputTheme};
+pub use diff::DiffError;
 pub use email_input::EmailInput;
 pub use focus_ring::{Claims, FocusRing, RingFocus, RingItem, use_ring_focus};
 pub use input::{InputAction, InputState, InputTheme, reduce_input, use_input_state};
