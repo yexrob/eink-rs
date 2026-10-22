@@ -82,11 +82,13 @@ cargo run -p quill -- exec "plan a refactor"
 ```
 
 `markdown` streams a reply the way a chat client shows it, from a canned
-answer or a file:
+answer or a file; `markdown-stress` times each frame of a stream without a
+terminal:
 
 ```sh
 cargo run --example markdown --features markdown-highlight
 cargo run --example markdown --features markdown-highlight -- --file README.md --rate 4096
+cargo run --release --example markdown-stress --features markdown-highlight -- README.md
 ```
 
 ## License

@@ -55,3 +55,7 @@ required-features = ["cli", "router"]
 [[example]]
 name = "markdown"
 required-features = ["markdown"]
+
+[[example]]
+name = "markdown-stress"
+required-features = ["markdown"]
