@@ -60,3 +60,6 @@ required-features = ["markdown"]
 [[example]]
 name = "markdown-stress"
 required-features = ["markdown"]
+
+[[example]]
+name = "focus-ring"

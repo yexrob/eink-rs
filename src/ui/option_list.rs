@@ -11,6 +11,8 @@ pub struct SelectOption<T> {
     pub label: String,
     /// Value returned when this option is selected.
     pub value: T,
+    /// Dimmed text displayed on the line under the label.
+    pub description: Option<String>,
 }
 
 impl<T> SelectOption<T> {
@@ -19,7 +21,14 @@ impl<T> SelectOption<T> {
         Self {
             label: label.into(),
             value,
+            description: None,
         }
+    }
+
+    /// Adds a description under the label.
+    pub fn description(mut self, description: impl Into<String>) -> Self {
+        self.description = Some(description.into());
+        self
     }
 }
 
@@ -69,6 +78,18 @@ impl<T> OptionList<T> {
 
     pub fn focused_option(&self) -> Option<&SelectOption<T>> {
         self.focused.and_then(|index| self.options.get(index))
+    }
+
+    pub fn focus(mut self, index: usize) -> Self {
+        if index < self.options.len() {
+            self.focused = Some(index);
+            if index < self.window.start {
+                self.window = index..index + self.count;
+            } else if index >= self.window.end {
+                self.window = index + 1 - self.count..index + 1;
+            }
+        }
+        self
     }
 
     pub fn visible_options(&self) -> &[SelectOption<T>] {
@@ -143,6 +164,7 @@ pub(super) fn render<T>(
     list: &OptionList<T>,
     is_disabled: bool,
     highlight_text: &str,
+    number_hotkeys: bool,
     theme: RowTheme<'_>,
     is_selected: impl Fn(&T) -> bool,
 ) -> Element {
@@ -175,12 +197,25 @@ pub(super) fn render<T>(
                     } else {
                         label = label.child(option.label.as_str());
                     }
-                    View::new()
+                    let number = list.window.start + offset + 1;
+                    let row = View::new()
                         .gap(theme.row_gap)
                         .padding_left(if focused { 0 } else { theme.unfocused_indent })
                         .child(focused.then(|| Text::new(theme.pointer).color(theme.focus_color)))
+                        .child(
+                            (number_hotkeys && number <= 9)
+                                .then(|| Text::new(format!("{number}.")).color(color)),
+                        )
                         .child(label)
-                        .child(selected.then(|| Text::new(theme.tick).color(theme.selected_color)))
+                        .child(selected.then(|| Text::new(theme.tick).color(theme.selected_color)));
+                    View::new()
+                        .flex_direction(FlexDirection::Column)
+                        .child(row)
+                        .child(option.description.as_ref().map(|description| {
+                            View::new()
+                                .padding_left(theme.unfocused_indent)
+                                .child(Text::new(description).dim_color(true))
+                        }))
                 }),
         )
         .into()

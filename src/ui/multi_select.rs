@@ -165,6 +165,7 @@ fn multi_select<T: Clone + PartialEq + 'static>(cx: &mut Scope, props: &MultiSel
         &current.list,
         props.is_disabled,
         &props.highlight_text,
+        false,
         theme.rows(),
         |value| current.value.contains(value),
     )

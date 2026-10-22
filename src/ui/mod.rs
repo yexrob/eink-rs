@@ -2,15 +2,18 @@
 //!
 //! Each component comes in three layers: a headless state hook, the
 //! component, and a theme. Interactive components read keys while
-//! `is_disabled` is false; focus is left to the application, which can derive
-//! `is_disabled` from [`Scope::use_focus`](ink_rs::Scope::use_focus).
+//! `is_disabled` is false. [`Button`], [`TextInput`] and [`Select`] join the
+//! nearest [`FocusRing`]; outside a ring the application gates their input.
+//! Mixing a ring with ink-rs `Scope::use_focus` handles Tab twice.
 //!
 //! A component reads its theme with [`use_theme`].
 
 mod alert;
 mod badge;
+mod button;
 mod confirm_input;
 mod email_input;
+mod focus_ring;
 mod input;
 mod multi_select;
 mod option_list;
@@ -26,8 +29,10 @@ mod unordered_list;
 
 pub use alert::{Alert, AlertTheme};
 pub use badge::{Badge, BadgeTheme};
+pub use button::{Button, ButtonTheme, ButtonVariant};
 pub use confirm_input::{ConfirmChoice, ConfirmInput, ConfirmInputTheme};
 pub use email_input::EmailInput;
+pub use focus_ring::{Claims, FocusRing, RingFocus, RingItem, use_ring_focus};
 pub use input::{InputAction, InputState, InputTheme, reduce_input, use_input_state};
 pub use multi_select::{MultiSelect, MultiSelectState, MultiSelectTheme, use_multi_select_state};
 pub use option_list::SelectOption;

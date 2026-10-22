@@ -22,7 +22,7 @@ eink-rs 建在 [ink-rs](https://github.com/yexrob/ink-rs) 上，有四部分：
 每个组件一个模块，最多公开三样：
 
 - **状态 hook**：有状态的组件公开 `use_x_state(cx, ..)`，不含按键绑定和渲染。状态更新写成纯函数，用 `State::get` 和 `State::set` 应用。回调在按键处理里调用，参数取这次更新后的值。三个文本输入框共用 `use_input_state` 和 `reduce_input`；Select、MultiSelect 各有 `use_select_state`、`use_multi_select_state`；Spinner 公开 `use_spinner`。ConfirmInput 和其余展示组件没有状态。
-- **组件**：props 结构体派生 `Props`，渲染函数私有。交互组件有 `is_disabled`，为 false 时用 `use_input` 读键。焦点交给应用：用 `use_focus` 算出 `is_disabled`。
+- **组件**：props 结构体派生 `Props`，渲染函数私有。交互组件有 `is_disabled`，为 false 时用 `use_input` 读键。焦点交给应用：用 `use_focus` 算出 `is_disabled`，或把 `Button`、`TextInput`、`Select` 放进 `FocusRing`，见「焦点环」。
 - **主题**：`XTheme` 结构体，字段是颜色、字符、样式开关和间距，实现 `From<&Palette>`。布局结构（方向、图标不收缩）写在组件里，不进主题。三个文本输入框共用 `InputTheme`（光标、占位符、补全的样式和掩码字符）；`SelectTheme` 和 `MultiSelectTheme` 字段相同，类型分开，可以分别 provide。
 
 ### 主题
@@ -47,9 +47,32 @@ cx.provide(SelectTheme { focus_color: Color::Cyan, ..SelectTheme::from(&Palette:
 | `success` | 绿 | success 状态、已选项 |
 | `warning` | 黄 | warning 状态 |
 | `error` | 红 | error 状态 |
-| `accent` | 品红 | ProgressBar、Badge |
+| `accent` | 品红 | ProgressBar、Badge、主按钮 |
 
 Ink UI 的主题是一组函数，返回任意 Box/Text 属性，用 deepmerge 合并。这里的主题是数据：只能改列出来的字段，换来类型检查和 `PartialEq`。
+
+### 受控组件
+
+`TextInput` 和 `Select` 的 `value` 为 `Some` 时是受控的，忽略 `default_value`。宿主（bingo 渲染插件返回的元素树）决定框里下一刻是什么。
+
+- TextInput 的按键用 `reduce_input` 算出提议，调用 `on_change`，组件不应用它。同一批输入的按键之间不重渲染，处理器读到上一次渲染的 props，所以组件保留一份乐观值：每个键在它上面算，每次渲染按 `value` 校准。`value` 等于提议是采纳；等于上一帧的值是拒绝，光标留在原处；其他值是替换，光标到末尾。
+- Select 的选中标记跟随 `value`，焦点行和窗口归组件，初始焦点在 `value` 所在的项。`on_select` 在每次 Enter 时调用，含选中当前值的 Enter（权限确认要它）；`on_change` 的含义不变。`number_hotkeys` 打开时数字 1–9 聚焦并选中对应的项，行首画 `1.`。
+- `SelectOption::description` 画在标签下一行，缩进、变暗；窗口按选项计数。MultiSelect 共用这段画法。
+
+### 焦点环
+
+ink-rs 的焦点全应用一份，按注册顺序编号，不能限定子树。`FocusRing` 用 `provide`、`use_context`、`use_state`、`use_layout_effect`、`use_input` 自建，不调用 `use_focus`；和 ink-rs 的焦点混用时 Tab 处理两次。环不加布局节点，子节点按宿主的布局排列。
+
+- 成员调用 `use_ring_focus(cx, RingItem)` 加入它所在的环（嵌套时取内层），返回自己是否持有按键：环在活动，它获焦。环外返回 true。`Button`、`TextInput`、`Select` 用自己的 `id` 加入；宿主的组件用这个 hook 加非控件的停靠点（窗格的关闭标记、标签）。
+- 成员按字符串 key 寻址；没有 key 的成员每次挂载生成一个 `eink:ring:` 开头的 key，宿主不能指定它。
+- 顺序按屏幕位置：移动时用 `measure_element` 量每个成员，按 y 排，y 相同时按 x 排。渲染之间增删的控件落在它在屏幕上的位置。
+- 每次移动是一个提议：Tab、Shift+Tab、方向键、自动聚焦和焦点成员离开产生提议，交给 `on_focus`。`focused` 是 `RingFocus::Managed` 时环自己应用；是 `Key` 或 `None` 时等宿主改 `focused`，宿主可以采纳、改道或忽略，改动可以在异步检查之后。
+- 焦点成员离开树时，按它末次测得的位置提议其后的成员，没有时取它前面的，环空时提议 `None`。环在渲染时量一次成员，赶在协调分离被删节点的引用之前。
+- 环变成活动（挂载时 `is_active`，或 `is_active` 变成 true）且没有焦点时，提议第一个 `auto_focus` 成员；没有这样的成员时不提议，Enter 不作用在作者没标记的按钮上。环在活动、没有焦点时挂载的 `auto_focus` 成员得到同样的提议。
+- `arrows` 打开时，焦点成员不占用方向键的情况下方向键走环。成员用 `Claims` 声明：Select 占用方向键，TextInput 占用文字和方向键。
+- TextInput 获焦时，别的成员的字母、数字热键停用，打 `y` 不会按下按钮。
+- 同一时刻一个站点持有按键，宿主用环的 `is_active` 和输入框的 `is_disabled` 保证。门控读上一次渲染的 props，离开站点的 Esc 不会在同一批输入里到达输入框。
+- `Button` 画成 `[ label ]`，获焦时反色；括号和热键分隔符在 `ButtonTheme` 里，主按钮取 `accent`，次按钮无颜色。环外的 Button 视为获焦，Enter 和空格按下环外的每一个 Button，应用用 `is_disabled` 门控。
 
 ### 和 Ink UI 不同的地方
 

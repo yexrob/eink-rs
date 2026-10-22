@@ -3,6 +3,8 @@
 //! Input callbacks run in event handlers, not effects. Modified text keys do
 //! not insert text, and bracketed pastes use a paste hook.
 
+use std::{cell::RefCell, rc::Rc};
+
 use ink_rs::{Callback, Element, Scope, State, Text};
 use unicode_segmentation::UnicodeSegmentation;
 
@@ -120,8 +122,48 @@ pub(super) struct InputConfig<S, F> {
     pub on_submit: Option<Callback<String>>,
 }
 
-fn apply(
+#[derive(Clone)]
+pub(super) struct InputBuffer {
     state: State<InputState>,
+    optimistic: Option<Rc<RefCell<InputState>>>,
+}
+
+impl From<State<InputState>> for InputBuffer {
+    fn from(state: State<InputState>) -> Self {
+        Self {
+            state,
+            optimistic: None,
+        }
+    }
+}
+
+impl InputBuffer {
+    pub fn controlled(state: State<InputState>, optimistic: Rc<RefCell<InputState>>) -> Self {
+        Self {
+            state,
+            optimistic: Some(optimistic),
+        }
+    }
+
+    fn get(&self) -> InputState {
+        self.optimistic
+            .as_ref()
+            .map_or_else(|| self.state.get(), |value| value.borrow().clone())
+    }
+
+    fn set(&self, next: InputState) {
+        if let Some(value) = &self.optimistic {
+            *value.borrow_mut() = next.clone();
+            // Render after a repeated rejected proposal to reset the batch buffer.
+            self.state.update(|state| *state = next);
+        } else {
+            self.state.set(next);
+        }
+    }
+}
+
+fn apply(
+    state: &InputBuffer,
     action: InputAction<'_>,
     on_change: &Option<Callback<String>>,
 ) -> String {
@@ -138,13 +180,15 @@ fn apply(
 
 pub(super) fn use_input<S, F>(
     cx: &mut Scope,
-    state: State<InputState>,
+    state: impl Into<InputBuffer>,
     is_disabled: bool,
     config: InputConfig<S, F>,
 ) where
     S: Fn(&str) -> Option<String> + 'static,
     F: Fn(&str, &str) -> bool + Clone + 'static,
 {
+    let state = state.into();
+    let paste_state = state.clone();
     let paste_filter = config.insert_filter.clone();
     let paste_change = config.on_change.clone();
     cx.use_input(!is_disabled, move |input, key| {
@@ -156,7 +200,11 @@ pub(super) fn use_input<S, F>(
             let value = if let Some(suggestion) = (config.suggestion)(&value)
                 && !suggestion.is_empty()
             {
-                apply(state, InputAction::Complete(&suggestion), &config.on_change)
+                apply(
+                    &state,
+                    InputAction::Complete(&suggestion),
+                    &config.on_change,
+                )
             } else {
                 value
             };
@@ -164,22 +212,22 @@ pub(super) fn use_input<S, F>(
                 callback.call(value);
             }
         } else if key.left_arrow {
-            apply(state, InputAction::MoveLeft, &config.on_change);
+            apply(&state, InputAction::MoveLeft, &config.on_change);
         } else if key.right_arrow {
-            apply(state, InputAction::MoveRight, &config.on_change);
+            apply(&state, InputAction::MoveRight, &config.on_change);
         } else if key.backspace || key.delete {
-            apply(state, InputAction::Delete, &config.on_change);
+            apply(&state, InputAction::Delete, &config.on_change);
         } else if !key.ctrl
             && !key.meta
             && !input.is_empty()
             && (config.insert_filter)(&state.get().value, input)
         {
-            apply(state, InputAction::Insert(input), &config.on_change);
+            apply(&state, InputAction::Insert(input), &config.on_change);
         }
     });
     cx.use_paste(!is_disabled, move |text| {
-        if !text.is_empty() && paste_filter(&state.get().value, text) {
-            apply(state, InputAction::Insert(text), &paste_change);
+        if !text.is_empty() && paste_filter(&paste_state.get().value, text) {
+            apply(&paste_state, InputAction::Insert(text), &paste_change);
         }
     });
 }
