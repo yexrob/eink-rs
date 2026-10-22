@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use ink_rs::{Element, FlexDirection, Props, Scope, Styled, Text, View};
+use ink_rs::{Element, FlexDirection, Props, Scope, Styled, Text, View, text_width};
 
 use super::{MarkdownTheme, render};
 use crate::ui::use_theme;
@@ -17,6 +17,14 @@ pub struct MarkdownPiece {
 pub(crate) struct Content {
     pub gap: u16,
     pub kind: Kind,
+    pub hang: Rc<[(Marker, bool)]>,
+}
+
+#[derive(Clone, Copy)]
+pub(crate) enum Marker {
+    Number(u64),
+    Bullet(usize),
+    Task(bool),
 }
 
 pub(crate) enum Kind {
@@ -40,9 +48,9 @@ impl PartialEq for MarkdownPiece {
 }
 
 impl MarkdownPiece {
-    pub(crate) fn new(gap: u16, kind: Kind) -> Self {
+    pub(crate) fn new(gap: u16, kind: Kind, hang: Rc<[(Marker, bool)]>) -> Self {
         Self {
-            inner: Rc::new(Content { gap, kind }),
+            inner: Rc::new(Content { gap, kind, hang }),
         }
     }
 
@@ -57,7 +65,13 @@ impl MarkdownPiece {
                 source,
                 number,
                 links,
-            } => render::render_links(source, theme, cache, *number, links),
+            } => render::render_links(
+                source,
+                &nested_theme(theme, self.inner.hang.len()),
+                cache,
+                *number,
+                links,
+            ),
             Kind::Opening(language) => {
                 let mut view = View::new();
                 if !language.is_empty() {
@@ -78,12 +92,61 @@ impl MarkdownPiece {
                 View::new().padding_left(2).child(text).into()
             }
         };
-        View::new()
-            .flex_direction(FlexDirection::Column)
-            .padding_top(self.inner.gap)
-            .child(body)
-            .into()
+        hanging(
+            View::new()
+                .flex_direction(FlexDirection::Column)
+                .padding_top(self.inner.gap)
+                .child(body)
+                .into(),
+            &self.inner.hang,
+            theme,
+        )
     }
+}
+
+pub(crate) fn nested_theme(theme: &MarkdownTheme, depth: usize) -> MarkdownTheme {
+    let mut theme = theme.clone();
+    let count = theme.bullets.len();
+    if count > 0 {
+        theme.bullets.rotate_left(depth % count);
+    }
+    theme
+}
+
+pub(crate) fn hanging(
+    mut body: Element,
+    hang: &[(Marker, bool)],
+    theme: &MarkdownTheme,
+) -> Element {
+    for (marker, shown) in hang.iter().rev() {
+        let marker = match marker {
+            Marker::Number(number) => format!("{number}."),
+            Marker::Bullet(depth) => theme
+                .bullets
+                .get(depth % theme.bullets.len().max(1))
+                .cloned()
+                .unwrap_or_else(|| "-".into()),
+            Marker::Task(true) => theme.task_done.clone(),
+            Marker::Task(false) => theme.task_open.clone(),
+        };
+        let mut column = View::new()
+            .width(u16::try_from(text_width(&marker) + 1).unwrap_or(u16::MAX))
+            .flex_shrink(0.0);
+        if *shown {
+            column = column.child(Text::new(marker).color(theme.bullet_color));
+        }
+        body = View::new()
+            .child(column)
+            .child(
+                View::new()
+                    .flex_direction(FlexDirection::Column)
+                    .flex_grow(1.0)
+                    .min_width(0)
+                    .child(body),
+            )
+            .into();
+    }
+    body
 }
 
 pub(crate) fn plain_line(source: &str, theme: &MarkdownTheme) -> Text {

@@ -67,6 +67,45 @@ fn pieces_equal_document() {
         "> quote\n>\n> > nested\n\n> [!NOTE]\n> alert\n\nA note[^1].\n\n[^1]: footnote\n\n<div>\nhtml\n</div>\n\n---\n",
         "[ref]: https://example.com\n\n# Heading\n\nA [reference][ref].\n\nAnother [ref].\n",
         "- a\n\n  - b\n\n    paragraph\n\n    - c\n\n  ending\n- d\n",
+        "1. a\n   ```rust\n   x\n   ```\n2. b\n",
+        "1. a\n   ```\n   x\n   ```\n   tail\n2. b\n",
+        "1. a\n   ```\n   x\n   ```\n   tail\n2.5x\n",
+        "- a\n\n  ```rust\n  x\n  ```\n\n  tail\n- b\n",
+        "- ```rust\n  x\n  ```\n",
+        "- ```\n  ```\n",
+        "- a\n  - b\n    ```rust\n    x\n    ```\n  - c\n- d\n",
+        "10. a\n    ```\n    x\n    ```\n",
+        "- a\n  ```rust\n  let x = 1;\n  ```\n  between\n  ```not-a-language\n  x\n  ```\n  tail\n",
+        "- a\n  ```rust\n  x\n\n- b\n",
+        "- a\n  ```\n  x\n  ```\n  more\nlazy\n",
+        "- a\n> ```\n> x\n> ```\n",
+        "- a\n  > ```\n  > x\n  > ```\n",
+        "-\ta\n\t```rust\n\tx\n\t```\n",
+        "- a\n  \t```rust\n  \tx\n  \t```\n",
+        "- a\n  ```rust\n  let x = 1;",
+        "- [x] done\n  ```rust\n  x\n  ```\n  tail\n- [ ] next\n",
+        "- [ ] ```rust\n  x\n  ```\n",
+        "- a\n  9. b\n     - c\n       ```rust\n       x\n       ```\n     - d\n  1. e\n- f\n",
+        "- a\n  ```\n  ```\n  ```rust\n  ```\n- b\n",
+        "- ```\n  x\n  ```\n- b\n",
+        "- ```\n  ```\n- ```\n  ```\n",
+        "- a\n  - ```rust\n    x\n    ```\n  - c\n- d\n",
+        "3. a\n    ```rust\n    x\n    ```\n1. b\n",
+        "- a\n    ```rust\n    x\n    ```\n",
+        "- a\n  - b\n    ```\n    x\n    ```\n    tail\nlazy\n- c\n",
+        "- a\n  ```rust\n  x\n  ```\n\n  > quote\n\n  - child\n\n    text\n- b\n",
+        "- a\n  ```rust\n  x\n  ```\n  \t```rust\n  \tx\n  \t```\n",
+        "- a\n  ```rust\n\tlet x = 1;\n  ```\n",
+        "- a\n\n  9. b\n     - c\n       - d\n         ```rust\n         x\n         ```\n       - e\n     - f\n  1. g\n- h\n",
+        "- - ```rust\n    x\n    ```\n  - c\n- d\n",
+        "- - ```\n    ```\n",
+        "- ```not-a-language\n  x\n  ```\n",
+        "- a\n  ```rust\n  界",
+        "- a\n  ```rust\n  x\n  ```\n  -\tb\n    ```rust\n    x\n    ```\n",
+        "- ```\n  ```\n  tail\n",
+        "- ```\n  ```\n\n  tail\n",
+        "- ```\n  ```\n  ```rust\n  x\n  ```\n",
+        "- a\n  ```\n  x\n  ```\n  \t```\n  \t-\tfoo\n  \t\tfoo\n  \t```\n\n      \tfoo\n\n  tail\n",
         ANSWER,
     ];
     for (document, source) in corpus.iter().enumerate() {
@@ -116,6 +155,22 @@ fn pieces_equal_document() {
             }
         }
     }
+}
+
+#[test]
+fn list_fence_settles_lines() {
+    let mut stream = MarkdownStream::new();
+    stream.push("- item\n  ```rust\n");
+    for _ in 0..500 {
+        stream.push("  let x = 1;\n");
+        while stream.wait_for_highlights() {}
+        stream.take_pieces();
+        assert!(stream.tail().lines().count() <= 2, "{}", stream.tail());
+    }
+    stream.push("  ```\n");
+    stream.finish();
+    stream.take_pieces();
+    assert!(stream.is_done());
 }
 
 #[derive(Clone, PartialEq)]
