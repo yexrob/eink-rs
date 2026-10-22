@@ -3,7 +3,7 @@
 - 日期：2026-10-22
 - 状态：实施中
 - 提交：无
-- Brief：[markdown-stream](briefs/markdown-stream.md)
+- Brief：[markdown-stream](briefs/markdown-stream.md)、[markdown-stream-gaps](briefs/markdown-stream-gaps.md)
 
 ## 背景
 
@@ -110,11 +110,11 @@ Claude 用 scratchpad 里的基准补测了更大的尾部。条件同 016：rel
 let stream = use_markdown_stream(cx, options, on_piece);
 ```
 
-- **`stream.sender()`** 返回 `MarkdownSender`：
+- **`stream.sender(app)`** 返回 `MarkdownSender`，`app` 是调用方给的 `AppHandle`（见第 11 条）：
   - `Clone + Send`，`push(&str)` 可在任意线程调用；
   - 同一批推送只唤醒一次；
   - `finish(self)` 消耗它；
-  - 它持有 `AppHandle`，生产者持有期间应用不退出，文档写明。
+  - 它持有这个 `AppHandle`，生产者持有期间应用不退出，文档写明。
 - **`on_piece`** 在 UI 线程按顺序对每段调用一次。一段进入应用的历史和离开尾部在同一帧。定稿的段交给应用自己的 `Static`，016 的这条不变。
 - **句柄还提供：**
   - 尾部组件；
@@ -133,6 +133,7 @@ let stream = use_markdown_stream(cx, options, on_piece);
 - 按键和 `--fps` 不变。
 - 新增 `--file PATH`，流式显示这个文件，和 `--rate BYTES`，每秒发这么多字节、每 8ms 一块。主 agent 用它们在 tmux 里压测大文件。
 - 状态栏的帧率改为最近一秒实际渲染的帧数。
+- 历史放在 demo 自己的存储里，经 `Static::from_fn` 按下标渲染，每帧不复制（见第 11 条）。
 
 ### 9. 测试
 
@@ -159,6 +160,22 @@ let stream = use_markdown_stream(cx, options, on_piece);
   - `tests/markdown.rs`；
   - `Cargo.toml` 的 `[[test]]` 项。
 - README 和 `docs/design.md` 由主 agent 写。
+
+### 11. Codex 报告的两个缺口
+
+第一次派出的 Codex 读完代码后停下，没有改文件，报告 ink-rs 0.1.4 缺两个原语：
+
+- `Static::new` 收 `Rc<[T]>`，应用的历史每增长一次要复制一份；
+- `AppHandle` 没有不保活的形式，hook 的句柄若持有它，应用不能自然结束。
+
+Claude 测了第一条：每帧克隆历史、转成 `Rc<[T]>`，2 千项 5µs，2 万项 61µs，10 万项 377µs。第二条来自 brief 规定的 `stream.sender()` 不带参数。Claude 对两条都建议不改 ink-rs，问用户。用户定：
+
+- 「ink-rs 加 Static::from_fn」：ink-rs 加 `Static::from_fn(len, render)`，见 ink-rs 的记录 066，随 ink-rs 0.1.5 发布。0.1.5 发布前，worktree 的 `Cargo.toml` 用 `[patch.crates-io]` 指向本机的 ink-rs，集成时换成 `0.1.5` 的要求。
+- 「sender 接收调用方的 AppHandle」：`stream.sender(app)`。hook 返回的句柄不持有 `AppHandle`。高亮结果要唤醒 UI 时，借进行中的工作带的句柄，结果交付后释放：
+  - 发送端的推送带发送端的句柄；
+  - 匀速 tick 揭示的行，带 hook 渲染时取的句柄，运行中的时钟让应用保持运行。
+
+Codex 的会话接着做，补充的 brief 见 [markdown-stream-gaps](briefs/markdown-stream-gaps.md)。
 
 ## 备选与取舍
 
