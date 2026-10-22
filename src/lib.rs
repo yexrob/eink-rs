@@ -13,6 +13,8 @@
 pub mod cli;
 #[cfg(feature = "highlight")]
 pub(crate) mod highlight;
+#[cfg(feature = "image")]
+pub mod image;
 #[cfg(feature = "markdown")]
 pub mod markdown;
 #[cfg(feature = "router")]
