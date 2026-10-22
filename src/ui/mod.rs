@@ -11,6 +11,7 @@
 mod alert;
 mod badge;
 mod button;
+mod composer;
 mod confirm_input;
 mod email_input;
 mod focus_ring;
@@ -30,6 +31,10 @@ mod unordered_list;
 pub use alert::{Alert, AlertTheme};
 pub use badge::{Badge, BadgeTheme};
 pub use button::{Button, ButtonTheme, ButtonVariant};
+pub use composer::{
+    Caret, Composer, ComposerAction, ComposerState, Direction, Edit, Reduced, composer_caret,
+    reduce_composer,
+};
 pub use confirm_input::{ConfirmChoice, ConfirmInput, ConfirmInputTheme};
 pub use email_input::EmailInput;
 pub use focus_ring::{Claims, FocusRing, RingFocus, RingItem, use_ring_focus};

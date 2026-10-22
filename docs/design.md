@@ -74,6 +74,19 @@ ink-rs 的焦点全应用一份，按注册顺序编号，不能限定子树。`
 - 同一时刻一个站点持有按键，宿主用环的 `is_active` 和输入框的 `is_disabled` 保证。门控读上一次渲染的 props，离开站点的 Esc 不会在同一批输入里到达输入框。
 - `Button` 画成 `[ label ]`，获焦时反色；括号和热键分隔符在 `ButtonTheme` 里，主按钮取 `accent`，次按钮无颜色。环外的 Button 视为获焦，Enter 和空格按下环外的每一个 Button，应用用 `is_disabled` 门控。
 
+### Composer
+
+`Composer` 是编码 agent 的多行提示输入框，受控：文字和光标（字节偏移）从 props 进来，每次改动调用 `on_edit(Edit)`，`Edit` 带动作和改动前后的状态，宿主采纳、改写或忽略。无头的 `reduce_composer(state, action, columns, kill)` 和 `reduce_input` 并列，共用私有的字形 helper；两者的光标单位不同（字节偏移和字形下标），所以没有扩展 `InputState`。主题沿用 `InputTheme`。
+
+- 折行：按字形的 `text_width` 累加，放不下的字形移到下一行，每个视觉行画成一个 `Text`。宽度取 `use_box_metrics` 量到的宽度，量到之前用窗口列数，减去提示符的宽度和行尾光标占的 1 格。制表符按 4 列显示，不对齐制表位。
+- 光标：`use_node_cursor` 锚在文字所在的 `View` 上，绘制时按节点的位置算出，上方的输出变长时输入法候选框跟着光标。组件画一个反色的光标格，给不读终端光标的路径（字符串渲染、测试）。禁用时声明 `None`，不画光标格。`on_caret` 给出光标在框内的位置，宿主用它放补全弹层。
+- 同一批输入的按键之间不重渲染：组件保留一份乐观值，每个键在它上面算，每次渲染用 props 覆盖；宿主忽略编辑时下一帧回到 props。
+- 高度：`max_rows` 之内框随内容长高，超过后在框内滚动，首行跟随光标行；0 表示不限。
+- kill 缓冲归组件：Ctrl+W、Ctrl+U、Ctrl+K 填它，Ctrl+Y 插入。无头的使用者把缓冲传给 `reduce_composer`。
+- 按键：Enter 提交，光标前是 `\` 时把它换成换行；Shift+Enter、Alt+Enter、Ctrl+J 换行，Shift+Enter 要 kitty 键盘协议，传统终端里和 Enter 相同。Ctrl+A、Ctrl+E、Home、End 按逻辑行移动；Alt+B、Alt+F、Ctrl+←、Ctrl+→ 按 UAX #29 的词移动；Up、Down 按视觉行移动，在首末行调用 `on_history`。Ctrl+C 调用 `on_interrupt`，滤掉 kitty 的松开事件，应用要关掉 `exit_on_ctrl_c`。Tab 留给宿主。
+- 粘贴：`\r\n` 和 `\r` 换成 `\n`，整段是一次 `Insert`。
+- Composer 不进焦点环，宿主用 `is_disabled` 决定按键归它还是归条带。
+
 ### 和 Ink UI 不同的地方
 
 - **列表**：Rust 写不出 `OrderedList.Item`，也不按类型识别子节点。列表的每个子节点算一项，`None` 转成的空元素不算，编号也跳过它。一项里放多个元素时用 `View` 包起来，嵌套列表写在这个 `View` 里。

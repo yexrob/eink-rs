@@ -1,5 +1,6 @@
 use eink_rs::ui::{
-    InputAction, InputState, SelectOption, reduce_input, use_input_state, use_select_state,
+    Composer as Prompt, ComposerAction, ComposerState, Direction, Edit, SelectOption,
+    use_select_state,
 };
 use ink_rs::{Callback, Color, Element, KeyEventType, Props, Scope, Styled, Text, View};
 
@@ -23,7 +24,7 @@ pub(crate) enum Intent {
     ControlC { had_text: bool },
 }
 
-/// A headless-input composer with history and completion popups.
+/// A controlled prompt with history and completion popups.
 #[derive(Clone, PartialEq, Props)]
 #[props(component = composer)]
 pub(crate) struct Composer {
@@ -35,18 +36,8 @@ pub(crate) struct Composer {
     pub on_intent: Callback<Intent>,
 }
 
-// Derive byte boundaries through the editing kernel so grapheme semantics stay
-// with eink-rs, including combining characters and emoji sequences.
-fn prefix(state: &InputState) -> String {
-    let mut left = InputState::new(&state.value);
-    while left.cursor > state.cursor {
-        left = reduce_input(&left, InputAction::Delete);
-    }
-    left.value
-}
-
-fn mention(state: &InputState) -> Option<(usize, usize, String)> {
-    let before = prefix(state);
+fn mention(state: &ComposerState) -> Option<(usize, usize, String)> {
+    let before = &state.value[..state.cursor];
     let start = before
         .rfind(char::is_whitespace)
         .map_or(0, |at| at + before[at..].chars().next().unwrap().len_utf8());
@@ -58,7 +49,7 @@ fn mention(state: &InputState) -> Option<(usize, usize, String)> {
 }
 
 fn composer(cx: &mut Scope, props: &Composer) -> Element {
-    let input = use_input_state(cx, "");
+    let input = cx.use_state(ComposerState::default);
     let history = cx.use_state(|| {
         props
             .first_prompt
@@ -95,128 +86,127 @@ fn composer(cx: &mut Scope, props: &Composer) -> Element {
     let shortcuts = props.shortcuts;
     let active = !props.disabled;
     let has_options = !options.is_empty();
-    cx.use_input(active, move |text, key| {
-        if key.event_type == Some(KeyEventType::Release) {
-            return;
+    let interrupt = Callback::new(move |()| {
+        intent.call(Intent::ControlC {
+            had_text: !input.get().value.is_empty(),
+        });
+        if !busy {
+            input.set(ComposerState::default());
+            recalled.set(None);
+            intent.call(Intent::Shortcuts(false));
         }
-        let current = input.get();
-        if key.ctrl && text == "c" {
-            intent.call(Intent::ControlC {
-                had_text: !current.value.is_empty(),
-            });
-            if !busy {
-                input.set(InputState::default());
-                recalled.set(None);
-                intent.call(Intent::Shortcuts(false));
+    });
+    let intent = props.on_intent.clone();
+    let escape = Callback::new(move |()| {
+        if busy {
+            intent.call(Intent::Interrupt);
+        } else if escaped.get() {
+            if let Some(last) = history.get().last() {
+                input.set(ComposerState::new(last));
             }
-            return;
+            escaped.set(false);
+        } else {
+            escaped.set(true);
         }
-        if shortcuts {
-            if key.escape || text == "?" {
-                intent.call(Intent::Shortcuts(false));
-            }
-            return;
-        }
-        if text == "?" && current.value.is_empty() {
-            intent.call(Intent::Shortcuts(true));
-            return;
-        }
-        if key.escape {
-            if busy {
-                intent.call(Intent::Interrupt);
-            } else if escaped.get() {
-                if let Some(last) = history.get().last() {
-                    input.set(InputState::new(last));
-                }
-                escaped.set(false);
-            } else {
-                escaped.set(true);
-            }
-            return;
-        }
+    });
+    let navigate = Callback::new(move |direction| {
         escaped.set(false);
-        if !options.is_empty() && (key.up_arrow || key.down_arrow) {
-            selection.set(if key.up_arrow {
+        if has_options {
+            selection.set(if direction == Direction::Up {
                 selection.get().focus_previous_option()
             } else {
                 selection.get().focus_next_option()
             });
-            return;
-        }
-        if (key.tab || key.enter) && !options.is_empty() {
-            let selected = selection
-                .get()
-                .focused_index()
-                .and_then(|index| options.get(index));
-            if let Some(selected) = selected {
-                if command_popup {
-                    input.set(InputState::new(&selected.value));
-                    if key.enter {
-                        intent.call(Intent::Submit(selected.value.clone()));
-                        input.set(InputState::default());
-                    }
-                } else if let Some((start, end, _)) = &file_word {
-                    let mut replacement = current.value[..*start].to_string();
-                    replacement.push_str(&selected.value);
-                    replacement.push(' ');
-                    let cursor = InputState::new(&replacement).cursor;
-                    replacement.push_str(&current.value[*end..]);
-                    input.set(InputState {
-                        value: replacement,
-                        cursor,
-                    });
-                }
-            }
-            return;
-        }
-        if key.enter {
-            if !current.value.trim().is_empty() {
-                history.update(|entries| entries.push(current.value.clone()));
-                intent.call(Intent::Submit(current.value));
-                input.set(InputState::default());
-                recalled.set(None);
-            }
-            return;
-        }
-        if (key.up_arrow || key.down_arrow)
-            && (current.value.is_empty() || recalled.get().is_some())
-        {
+        } else if input.get().value.is_empty() || recalled.get().is_some() {
             let entries = history.get();
             let index = recalled.get().unwrap_or(entries.len());
-            let next = if key.up_arrow {
+            let next = if direction == Direction::Up {
                 index.saturating_sub(1)
             } else {
                 (index + 1).min(entries.len())
             };
-            input.set(InputState::new(
+            input.set(ComposerState::new(
                 entries.get(next).cloned().unwrap_or_default(),
             ));
             recalled.set((next < entries.len()).then_some(next));
-            return;
         }
-        let action = if (key.ctrl && text == "j") || text == "\n" {
-            Some(InputAction::Insert("\n"))
-        } else if key.left_arrow {
-            Some(InputAction::MoveLeft)
-        } else if key.right_arrow {
-            Some(InputAction::MoveRight)
-        } else if key.backspace || key.delete {
-            Some(InputAction::Delete)
-        } else if !key.ctrl && !key.meta && !key.tab && !text.is_empty() {
-            Some(InputAction::Insert(text))
-        } else {
-            None
-        };
-        if let Some(action) = action {
-            input.set(reduce_input(&current, action));
-            if !key.left_arrow && !key.right_arrow {
-                recalled.set(None);
+    });
+    let intent = props.on_intent.clone();
+    let complete = Callback::new(move |submit| {
+        escaped.set(false);
+        let selected = selection
+            .get()
+            .focused_index()
+            .and_then(|index| options.get(index));
+        if let Some(selected) = selected {
+            if command_popup {
+                input.set(ComposerState::new(&selected.value));
+                if submit {
+                    intent.call(Intent::Submit(selected.value.clone()));
+                    input.set(ComposerState::default());
+                }
+            } else if let Some((start, end, _)) = &file_word {
+                let current = input.get();
+                let mut replacement = current.value[..*start].to_string();
+                replacement.push_str(&selected.value);
+                replacement.push(' ');
+                let cursor = replacement.len();
+                replacement.push_str(&current.value[*end..]);
+                input.set(ComposerState {
+                    value: replacement,
+                    cursor,
+                });
             }
         }
     });
-    cx.use_paste(active, move |text| {
-        if !shortcuts {
-            input.set(reduce_input(&input.get(), InputAction::Insert(text)));
+    let intent = props.on_intent.clone();
+    let tab_complete = complete.clone();
+    let shortcuts_interrupt = interrupt.clone();
+    cx.use_input(active, move |text, key| {
+        if key.event_type == Some(KeyEventType::Release) {
+            return;
+        }
+        if shortcuts {
+            if key.ctrl && text == "c" {
+                shortcuts_interrupt.call(());
+            } else if key.escape || text == "?" {
+                intent.call(Intent::Shortcuts(false));
+            }
+        } else if key.tab && has_options {
+            tab_complete.call(false);
+        }
+    });
+    let intent = props.on_intent.clone();
+    let edit_navigation = navigate.clone();
+    let on_edit = Callback::new(move |edit: Edit| {
+        escaped.set(false);
+        if (has_options || recalled.get().is_some())
+            && matches!(edit.action, ComposerAction::Up | ComposerAction::Down)
+        {
+            edit_navigation.call(if edit.action == ComposerAction::Up {
+                Direction::Up
+            } else {
+                Direction::Down
+            });
+        } else if edit.before.value.is_empty() && edit.action == ComposerAction::Insert("?".into())
+        {
+            intent.call(Intent::Shortcuts(true));
+        } else {
+            if edit.before.value != edit.after.value {
+                recalled.set(None);
+            }
+            input.set(edit.after);
+        }
+    });
+    let intent = props.on_intent.clone();
+    let on_submit = Callback::new(move |value: String| {
+        escaped.set(false);
+        if has_options {
+            complete.call(true);
+        } else if !value.trim().is_empty() {
+            history.update(|entries| entries.push(value.clone()));
+            intent.call(Intent::Submit(value));
+            input.set(ComposerState::default());
             recalled.set(None);
         }
     });
@@ -263,29 +253,19 @@ fn composer(cx: &mut Scope, props: &Composer) -> Element {
             )),
         );
     }
-    let mut text = Text::default();
-    if value.value.is_empty() {
-        text = text
-            .child(Text::new("A").inverse(true))
-            .child(Text::new("sk Quill to do anything").dim_color(true));
-    } else {
-        let left = prefix(&value);
-        let right = prefix(&reduce_input(&value, InputAction::MoveRight));
-        let cursor = &value.value[left.len()..right.len()];
-        text = text.child(left.as_str()).child(
-            Text::new(if cursor.is_empty() || cursor == "\n" {
-                " "
-            } else {
-                cursor
-            })
-            .inverse(true),
-        );
-        if cursor == "\n" {
-            text = text.child("\n");
-        }
-        text = text.child(&value.value[right.len()..]);
-    }
-    // A row keeps continuation lines aligned after the prompt marker.
-    body.child(View::new().child(Text::new("› ")).child(text))
-        .into()
+    body.child(
+        Prompt::default()
+            .value(value.value)
+            .cursor(value.cursor)
+            .prompt("› ")
+            .placeholder("Ask Quill to do anything")
+            .max_rows(5)
+            .is_disabled(shortcuts)
+            .on_edit(Some(on_edit))
+            .on_submit(Some(on_submit))
+            .on_history(Some(navigate))
+            .on_escape(Some(escape))
+            .on_interrupt(Some(interrupt)),
+    )
+    .into()
 }

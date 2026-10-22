@@ -46,6 +46,9 @@ name = "cli"
 required-features = ["cli"]
 
 [[example]]
+name = "composer"
+
+[[example]]
 name = "cli-async"
 required-features = ["tokio"]
 

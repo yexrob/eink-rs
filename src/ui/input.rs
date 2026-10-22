@@ -71,12 +71,7 @@ pub enum InputAction<'a> {
 /// Out-of-range cursors are clamped to the end before applying the edit.
 pub fn reduce_input(state: &InputState, action: InputAction<'_>) -> InputState {
     let mut next = state.clone();
-    let offsets: Vec<_> = state
-        .value
-        .grapheme_indices(true)
-        .map(|(offset, _)| offset)
-        .chain(std::iter::once(state.value.len()))
-        .collect();
+    let offsets = grapheme_offsets(&state.value);
     next.cursor = next.cursor.min(offsets.len() - 1);
     match action {
         InputAction::MoveLeft => next.cursor = next.cursor.saturating_sub(1),
@@ -108,6 +103,14 @@ pub fn reduce_input(state: &InputState, action: InputAction<'_>) -> InputState {
         }
     }
     next
+}
+
+pub(super) fn grapheme_offsets(value: &str) -> Vec<usize> {
+    value
+        .grapheme_indices(true)
+        .map(|(offset, _)| offset)
+        .chain(std::iter::once(value.len()))
+        .collect()
 }
 
 /// Stores an input value initialized at mount, without binding keys or rendering.
