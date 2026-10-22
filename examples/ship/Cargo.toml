@@ -9,4 +9,4 @@ publish = false
 
 [dependencies]
 eink-rs = { path = "../..", features = ["cli", "router", "completion"] }
-ink-rs = { version = "0.1.5", default-features = false, features = ["macros"] }
+ink-rs = { version = "0.1.7", default-features = false, features = ["macros"] }
