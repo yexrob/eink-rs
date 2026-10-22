@@ -1,8 +1,8 @@
 # `Code` 组件：行号和统一 diff
 
 - 日期：2026-10-22
-- 状态：实施中
-- 提交：无
+- 状态：已实施
+- 提交：`53c0d41`、`6dd9107`
 - Brief：[code](briefs/code.md)；需求：[bingo-code](briefs/bingo-code.md)
 
 ## 背景
@@ -53,3 +53,25 @@ bingo 渲染 Claude Code 的元素词表，其中有 `Code { source, language?, 
 - 第二部分：新增 `src/ui/code.rs`、`src/ui/diff.rs`、`tests/code.rs`、`examples/code.rs`。测试：行号栏的宽度和对齐；两个 hunk 的 diff；窄宽度下的 `Wrap` 和 `TruncateEnd`；坏 diff 的回退和 `on_fallback` 调用一次；开 `highlight` 时 hunk 还原保留多行注释的颜色；`Basic` 不画底色。验收同第一部分，加新的测试文件，开和不开 `highlight` 各一次。
 
 主 agent 集成：review，提交，全量测试，测 2000 行源码的渲染开销，`docs/design.md` 的 ui 和高亮两节，在 tmux `ink-rs` 会话里跑示例核对，补结果，删 worktree。进 0.2.2 之后的版本。
+
+## 结果
+
+- `53c0d41`（第一部分，在 main 上）：`highlight.rs` 移到 `src/highlight.rs`，`Lang::{Token, File}`，唤醒改成回调，块 id 取自全局计数器。
+- `be48b89`（第二部分）：`src/ui/code.rs`、`src/ui/diff.rs`、`tests/code.rs`、`examples/code.rs`；design.md 的 ui 加「Code」一节，「高亮」加一条；README 提到 `Code`。在分支 `wt/code` 上做成（`be48b89`），ink-rs 0.1.7 发布后 rebase 到 Composer 之上合入 main，`Cargo.toml` 的示例表和 `src/ui/mod.rs` 与 026、027 冲突，保留两边。用户选「带上控件、Composer、Code (Recommended)」，进 0.3.0（见 [030](030-release-0-3-0.md)）。
+- worker 的选择和偏离，主 agent 接受：
+  - `Wrap` 用 `TextWrap::Hard`，保留行首缩进。
+  - `Text` 没有宽度和 `flex_shrink`，行号包在固定宽度、不收缩的 `View` 里。
+  - diff 解析器 148 行，超过 brief 估的 120 行，多出的是错误类型和数值校验。
+  - 高亮线程改名 `eink-highlight`。
+  - 跨行注释的颜色在 `src/ui/code.rs` 的单元测试里测。
+- 主 agent review 改了 diff 的解析：worker 的版本在第一个 hunk 之前认 `diff --git`、`---`、`+++`，git 的 `index`、权限和改名行让整份 diff 回退；hunk 开始后，每一行按正文解析，多文件 diff 的第二个文件头判成坏行。改成 hunk 的计数用完后，后面不以空格、`-`、`+` 开头的行和 `---`、`+++` 算文件头，画成变暗的行。两个 hunk 的测试加上 git 的头。
+- 性能（release，100 列，`ink_rs::testing`，临时测试，没有提交）：
+
+  | 源码 | 第一帧 | 高亮到达 | props 不变时重渲染 |
+  |---|---|---|---|
+  | 64 行 | 49 ms，含语法集在 UI 线程的第一次加载 | 同步 | 0.5 ms |
+  | 2000 行 | 74 ms，纯色 | 360 ms | 28 ms |
+
+  对照：一个 2000 行的 `Text` 重渲染 22 ms，2000 个各含一个 `Text` 的 `View` 是 76 ms。2000 行 `Code` 的开销在 ink-rs 的布局和输出，组件不是瓶颈。
+- 全量：fmt；四组 feature 的 clippy（全开、不开、`markdown`、`highlight`）；`cargo test --workspace --all-features`、`--features markdown --test markdown`、不开 feature 的 `--test code`，共 153 个测试。
+- 手动核对（tmux `ink-rs` 会话，`examples/code.rs`）：行号灰色，语法按 `ansi` 主题着色；删除行和新增行带 `-`、`+`，底色是 `Rgb(56, 24, 24)` 和 `Rgb(24, 48, 30)`；文件头、hunk 头和上下文变暗。
