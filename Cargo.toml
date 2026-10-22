@@ -1,6 +1,6 @@
 [package]
 name = "eink-rs"
-version = "0.2.1"
+version = "0.3.0"
 edition = "2024"
 rust-version = "1.88"
 description = "Components, a CLI framework and an in-app router for ink-rs"
