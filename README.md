@@ -20,6 +20,9 @@ Components, a CLI framework and an in-app router for
 - **`eink_rs::markdown`** renders Markdown and streams model replies: finished
   pieces go to the scrollback through `Static`, the live tail repaints, and
   `markdown-highlight` colors fenced code on a background thread.
+- **`eink_rs::image`** shows images with kitty Unicode placeholders, or
+  `[alt]` where the terminal lacks them. Loaders for files and URLs can be
+  replaced; `markdown-image` shows the images in Markdown documents and streams.
 
 | Feature | Enables |
 |---|---|
@@ -30,6 +33,10 @@ Components, a CLI framework and an in-app router for
 | `markdown` | `eink_rs::markdown` and pulldown-cmark |
 | `highlight` | code highlighting with syntect, used by `Code` |
 | `markdown-highlight` | `markdown` plus `highlight` |
+| `image` | `eink_rs::image`, decoding PNG, JPEG, GIF and WebP |
+| `image-http` | `image` plus a URL loader on ureq |
+| `image-svg` | `image` plus SVG with resvg |
+| `markdown-image` | `markdown` plus `image` |
 
 No feature is on by default; `eink_rs::ui` needs none.
 
@@ -91,6 +98,14 @@ terminal:
 cargo run --example markdown --features markdown-highlight
 cargo run --example markdown --features markdown-highlight -- --file README.md --rate 4096
 cargo run --release --example markdown-stress --features markdown-highlight -- README.md
+```
+
+`image` shows the images named on the command line; `markdown --file` with
+`markdown-image` loads images relative to the file:
+
+```sh
+cargo run --example image --features image-svg -- logo.png diagram.svg
+cargo run --example markdown --features markdown-image -- --file docs/guide.md
 ```
 
 ## License

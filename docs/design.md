@@ -1,18 +1,19 @@
 # eink-rs 设计
 
-eink-rs 建在 [ink-rs](https://github.com/yexrob/ink-rs) 上，有四部分：
+eink-rs 建在 [ink-rs](https://github.com/yexrob/ink-rs) 上，有五部分：
 
 - `ui`：移植 Ink UI 2.0.0 的 13 个组件和 `useSpinner`，加上显示源码和 diff 的 `Code`。
 - `cli`：参照 Pastel 4.0.1 的 CLI 框架，命令用 clap 声明，由组件渲染。
 - `router`：参照 React Router 的应用内路由，路由表是 enum，可以从目录生成。
 - `markdown`：Markdown 渲染和模型回复的流式显示，定稿的段进 `Static`，尾部重绘。
+- `image`：用 kitty 的 Unicode 占位符显示图片的 `Image` 组件和加载器，Markdown 里的图片用它。
 
 设计怎么来的见 [decisions/](decisions/README.md)。
 
 ## 结构
 
 - workspace 的根 package 是 `eink-rs`。proc macro 在 Rust 里要独立成 crate：成员 `macros/`（`eink-rs-macros`）放 `Commands`、`Routes` 两个 derive 和 `routes!`。成员 `examples/file-routes/` 是目录路由的示例包，`examples/ship/` 是组合 ui、cli 和 router 的部署控制台示例包，`examples/quill/` 是内联渲染的编码助手示例包，都不发布。
-- `ui` 只依赖 ink-rs，`Code` 在开 `highlight` 时着色。feature 默认都不开：`cli` 加 clap 和 derive，`router` 加路由和它的宏，`completion` 加 clap_complete，`tokio` 加异步入口并开 ink-rs 的 `tokio`；后两个都带上 `cli`。`markdown` 加 pulldown-cmark，`highlight` 加 syntect 和 two-face，`markdown-highlight` 合并 `markdown` 和 `highlight`。只用组件的项目不编译 clap。
+- `ui` 只依赖 ink-rs，`Code` 在开 `highlight` 时着色。feature 默认都不开：`cli` 加 clap 和 derive，`router` 加路由和它的宏，`completion` 加 clap_complete，`tokio` 加异步入口并开 ink-rs 的 `tokio`；后两个都带上 `cli`。`markdown` 加 pulldown-cmark，`highlight` 加 syntect 和 two-face，`markdown-highlight` 合并 `markdown` 和 `highlight`。`image` 加 `image` crate 的解码和 `Image` 组件，`image-http` 加 ureq 的网络加载器，`image-svg` 加 resvg，后两个带上 `image`；`markdown-image` 合并 `markdown` 和 `image`。只用组件的项目不编译 clap。
 - 依赖 crates.io 上的 ink-rs，关掉它的默认 feature，开 `macros`。缺的通用原语加进 ink-rs，不在这里绕过。
 
 ## ui
@@ -242,3 +243,51 @@ pulldown-cmark 0.13 解析，开表格、删除线、任务列表、脚注和 GF
 - hook 在非交互模式下挂载，生产者线程推完一篇回答：输出和整篇相同，结束后没有渲染。
 
 `examples/markdown-stress.rs` 不经终端，按真实的帧节拍逐帧计时，给出每帧的分位数。
+
+## image
+
+终端支持 kitty 图形协议时，图片画成 Unicode 占位符：占位符是普通的文字单元格，参与布局，可以进 `Static` 和滚动区，在 tmux 里可用。不支持时显示 `[alt]`。讨论见 [023](decisions/023-image.md)，视频和动图不在这一版。
+
+### 组件
+
+- `Image { src, alt, max_columns, max_rows }`。列数上限默认是窗口列数，不超过窗口列数和 297（占位符的变音符号有 297 个）；行数上限默认 20，不超过 20。图片按宽高比缩进这个框，不放大。单元格的像素尺寸取 ink-rs 的 `use_graphics`，未知时按宽高 1:2 算。
+- 画占位符的条件：`use_graphics` 是 `Kitty`，色深是真彩或 256 色。探测中、不支持、色深低于 256 色时显示 `[alt]`，不加载。加载中和失败显示 `[alt]`，样式取 `ImageTheme`。
+
+### 加载
+
+- `ImageLoader` trait 把来源读成字节。`ImageLoaders` 有 `local` 和 `network` 两个槽，`http://`、`https://` 开头的来源走网络槽，其余走本地槽。应用用 `Scope::provide` 替换；没有提供时，本地槽是以当前目录为基准的 `FileLoader`，网络槽在开 `image-http` 时是 ureq 的 `HttpLoader`，否则为空，网络图片显示 `[alt]`。
+- 后台线程读字节，解码（png、jpeg、gif 的第一帧、webp；开 `image-svg` 时 SVG 由 resvg 栅格化），缩到显示的像素尺寸，编码成 PNG。文件上限 20 MiB，解码用 `image` 的 `Limits`。SVG 引用的外部文件不加载，内嵌的数据按相同的上限解码。
+- 期限：本地 5 秒，网络 10 秒，按动画时钟计。超时和失败显示 `[alt]`。
+- crate 内部的 `use_images` 给一次渲染的来源加载。同一来源出现多次时每次出现是一个条目，块和行内的尺寸可以并存。窗口变化时就绪的图片保留，放置换成新的行列，不触发加载。来源离开列表或组件卸载时作业取消，后台线程的结果被丢弃。
+
+### 发送
+
+- 图像 id 24 位，进程启动时取随机的起点，之后递增，不回收：滚动区里留下的占位符指向它。256 色下 id 是 8 位，有自己的计数器，跳过 ink-rs 探测用的 31。占位符的前景色编码 id：真彩用 `Rgb`，256 色用 `Ansi256`。
+- 占位符每行一个 `Text`，每格是 U+10EEEE 加行号和列号两个变音符号。行内图片带链接时，占位符包在 OSC 8 里。
+- `use_image_effect` 在提交后发送：图像数据（`a=t,t=d,f=100`，base64 每块 4096 字节）每张一次；虚拟放置（`a=p,U=1,p=1`）在行列变化时发，同号的放置替换旧的尺寸。发送经 ink-rs 的 `OutputWriter::write_passthrough`，在 tmux 里包成 passthrough。`Static` 里的条目写出后运行 effect，占位符早于数据到达终端，kitty 和 Ghostty 在数据到达后绘制。
+- eink-rs 不删除图像，终端按配额回收旧图。
+
+### Markdown 里的图片
+
+`markdown-image` 合并 `markdown` 和 `image`。`Markdown` 组件和流的段按同一套规则渲染：
+
+- 独占一段的图片按块显示，宽度上限是可用列数，高度上限 20 行。
+- 行内图片按可用宽度的自然高度不超过一行半时，缩成 1 行嵌在文字里，链接保留。超过一行半的把段落拆开：图片前的文字、图片、图片后的文字从上到下排列。
+- 可用列数：`Markdown` 组件和 `MarkdownTail` 用 `use_box_metrics` 量自己的宽度，量到之前用窗口列数，减去列表和引用的缩进。
+- 表格里的图片显示 `[alt]`：单元格的宽度由列宽决定，放不下占位符的行列。
+- `Markdown` 组件经 `use_images` 加载，和 `Image` 组件相同。
+
+### 流里的图片
+
+- `MarkdownStream::set_images` 设处理方式：`Alt`（默认，不加载）、`Probing`（含图片的段等着，不加载）、`Kitty { loaders, cell_pixels, color_level }`。`use_markdown_stream` 按 `use_graphics`、`use_color_level` 和上下文里的 `ImageLoaders` 设它；探测的结果是不支持时，等着的段按 alt 交出。
+- 含图片的段排在等高亮的那个队列里，后面的段排在它后面，输出的顺序不变。图片就绪、失败或超时后段交出，带着加载好的图片和按当时列数算出的尺寸。进 `Static` 后尺寸固定，不触发加载。
+- 列数由 `set_columns` 给出，默认 80；`MarkdownTail` 量到自己的宽度后设它。
+- 期限按 `tick` 累计的时间算。`use_markdown_stream` 在有段等图片时保持动画时钟运行，结果回来时经 `AppHandle` 唤醒 UI 线程。没有界面时用 `wait_for_images`，对应 `wait_for_highlights`：阻塞到下一个结果或下一个期限。
+- 加载线程和作业在 `image/load.rs`，`use_images` 和流共用。段被丢弃或流 `reset` 时作业取消。
+
+### 测试
+
+- `tests/image.rs` 有 5 个测试：数据发一次，改尺寸替换放置；占位符的行列标记和按色深编码的 id；加载中、失败和两种期限显示 alt；不支持的终端和空槽不加载；提供的加载器替换两个槽。
+- `tests/markdown_image.rs` 有 9 个测试：块图片不放大；小的行内图片和文字、链接在一行；高的行内图片拆开段落；列表的缩进从量到的列数里减去；表格里显示 alt；流里图片后面的文字等着，结果和整篇相同；期限放开卡住的加载器；探测后变成 alt 时不加载；`Static` 的段在占位符之后发一次数据。
+- 单元测试覆盖尺寸、SVG 栅格化、期限的重启和 base64 分块。
+- `examples/image.rs` 显示命令行给出的图片。`examples/markdown.rs --file` 在开 `markdown-image` 时用文件所在目录的 `FileLoader`。
