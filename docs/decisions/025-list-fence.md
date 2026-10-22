@@ -1,8 +1,8 @@
 # 列表项里的代码块按行定稿
 
 - 日期：2026-10-22
-- 状态：实施中
-- 提交：无
+- 状态：已实施
+- 提交：`42ed7ef` feat(markdown): settle fenced code in list items by line
 - Brief：[list-fence](briefs/list-fence.md)
 
 ## 背景
@@ -38,3 +38,27 @@
 - 验收：fmt；clippy `--all-features` 和 `--features markdown`；`--lib`；`--test markdown` 两组 feature。
 
 主 agent 集成：review，提交，全量测试，`docs/design.md` 的「定稿」「尾部」两节，`markdown-stress` 重测 500 行列表项场景（目标接近顶层的 0.21 / 6.18 ms），在 tmux `ink-rs` 会话里看流式回答，补结果，删 worktree。之后发 0.2.2，发版开新记录。
+
+## 结果
+
+- `42ed7ef`：`stream.rs` 的 `Frame` 栈，`piece.rs` 的 `Marker` 和 `hanging`；`render.rs` 不变。design.md 的「定稿」「尾部」「测试」三节更新。
+- worker 偏离 brief 的四处，主 agent 接受：
+  - 空的无语言代码块后面的标记延后：整篇渲染把标记和后面的正文画在同一行，标记等这一项第一个看得见的段；项结束时，没画过的标记输出成一个空项。
+  - `Frame` 加 `started`：空代码块算一个子块，不画标记，`shown` 表达不了这两种状态。
+  - 流在半行处结束时，这一行按顶层的做法交给高亮线程，颜色和整篇渲染相同。
+  - 整项定稿的回退路径按源码列解释制表符，代码里的制表符不转成空格。
+- 主 agent review 改了两处，在同一提交里：
+  - 懒续行的判断解析的范围是尾部，丢了列表项的上下文：`1. a` 的代码块之后有一行 `tail`，下一行 `2. b` 被判成懒续行，输出 `tail 2. b`；整篇渲染是第二项。改成从项的标记行解析，看项的范围是否盖住这一行；紧凑列表里 pulldown-cmark 不发段落事件，按段落判断会漏。语料加两篇（这个例子和懒续行 `2.5x`），共 68 篇。
+  - tmux 里看到：没写完的 `2. 跑测试` 画在上一项里，换行到达后跳到左侧。改成在代码块里或空行之后，缩出的半行到达时离开所在的项；其余情况等整行写完，判断懒续行。
+- 性能（`markdown-stress`，release，`markdown-highlight`，每帧 64 B，120 fps，ink-rs 0.1.5），p50 / p99 / max（ms），超过 8.33 ms 的帧：
+
+  | 文档 | main | 本提交 |
+  |---|---|---|
+  | 顶层 500 行代码块 | 0.19 / 0.46 / 1.86，0 / 387 | 0.19 / 0.49 / 0.73，0 / 387 |
+  | 列表项里 500 行代码块 | 9.15 / 19.68 / 103.67，224 / 410 | 0.22 / 0.73 / 1.22，0 / 410 |
+  | 5 项，各含 80 行代码块 | 每 KB 56–81 ms，6 段 | 每 KB 7.5 ms，421 段 |
+
+  README 和 design.md 两边的差别在噪声范围内。
+- 全量：fmt、三组 feature 的 clippy、`cargo test --workspace --all-features` 和 `--features markdown --test markdown` 通过，共 142 个测试。
+- 手动核对（tmux `ink-rs` 会话，`examples/markdown.rs --rate 40`）：有序项、任务子项、无序项里的代码块按行出现，终态和整篇渲染相同；修改后新项的半行从左侧起画。
+- 边界语料发现 main 上一处和本记录无关的差异：段落、标题或列表后面不空行地接新列表，流式少一行空行。[029](029-stream-held-gap.md) 接手。
