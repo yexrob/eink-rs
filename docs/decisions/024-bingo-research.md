@@ -57,4 +57,4 @@ bingo 是建在 ink-rs 和 eink-rs 上的编码 agent。它的会话 bingo-refac
 - 原语：「加两个 (Recommended)」，`use_color_level` 和锚定节点的光标进 ink-rs 0.1.7（ink-rs 的记录 074），Code 和 Composer 用它们。
 - 焦点顺序：「你问问bingo那个session 看看应该用哪个？」，结果见 026。
 
-实施记录：[025](025-list-fence.md) 列表项代码块、[026](026-controls.md) 控件、027 Composer、028 Code，以及 [023](023-image.md) 图片。027、028 和 023 等 ink-rs 的 074 合入后派出。
+实施记录：[025](025-list-fence.md) 列表项代码块、[026](026-controls.md) 控件、[027](027-composer.md) Composer、[028](028-code.md) Code，以及 [023](023-image.md) 图片。027、028 和 023 等 ink-rs 的 074 合入后派出。
