@@ -162,7 +162,7 @@ fn block_image_fits_cells_without_enlarging() {
 fn small_inline_image_keeps_text_and_link_on_one_row() {
     let (app, _) = document(
         "before [![alt](image)](https://example.invalid) after",
-        (30, 30),
+        (30, 10),
         40,
     );
     let frame = app.live_frame();
@@ -171,7 +171,8 @@ fn small_inline_image_keeps_text_and_link_on_one_row() {
     assert_eq!(frame.lines().count(), 1);
     assert!(frame.starts_with("before "));
     assert!(frame.ends_with(" after"));
-    assert_eq!(frame.matches(PIXEL).count(), 2);
+    // A 30×10 image in 10×20 cells is enlarged to the row's height: 60 pixels, 6 cells.
+    assert_eq!(frame.matches(PIXEL).count(), 6);
 }
 
 #[test]

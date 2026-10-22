@@ -12,9 +12,9 @@ mod load;
 mod loaders;
 mod protocol;
 
-#[cfg(feature = "markdown-image")]
-pub(crate) use decode::rows_at_width;
 pub(crate) use decode::{CellSize, ImageLimits, size_in_cells};
+#[cfg(feature = "markdown-image")]
+pub(crate) use decode::{rows_at_width, size_in_row};
 pub(crate) use hook::use_images;
 pub(crate) use load::{ImageRequest, ImageStatus};
 #[cfg(feature = "markdown-image")]

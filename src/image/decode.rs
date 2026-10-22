@@ -35,6 +35,33 @@ pub(crate) fn rows_at_width(natural: (u32, u32), limits: ImageLimits) -> f64 {
     f64::from(natural.1) * scale / f64::from(cell_height)
 }
 
+/// Returns the scale that fits the image to one row, enlarging it when it is shorter.
+#[cfg(any(feature = "markdown-image", feature = "image-svg"))]
+fn row_scale(natural: (u32, u32), limits: ImageLimits) -> Option<f64> {
+    let columns = limits.columns.min(DIACRITICS.len());
+    let (width, height) = natural;
+    if columns == 0 || width == 0 || height == 0 {
+        return None;
+    }
+    let (cell_width, cell_height) = limits.pixels();
+    Some(
+        (columns as f64 * f64::from(cell_width) / f64::from(width))
+            .min(f64::from(cell_height) / f64::from(height)),
+    )
+}
+
+/// Fits an inline image to one row; the terminal enlarges it to the row's height.
+#[cfg(feature = "markdown-image")]
+pub(crate) fn size_in_row(natural: (u32, u32), limits: ImageLimits) -> Option<CellSize> {
+    let scale = row_scale(natural, limits)?;
+    let (cell_width, _) = limits.pixels();
+    Some(CellSize {
+        columns: ((f64::from(natural.0) * scale / f64::from(cell_width)).ceil() as usize)
+            .clamp(1, limits.columns.min(DIACRITICS.len())),
+        rows: 1,
+    })
+}
+
 /// Fits the natural dimensions inside cell limits without enlarging the image.
 pub(crate) fn size_in_cells(natural: (u32, u32), limits: ImageLimits) -> Option<CellSize> {
     let columns = limits.columns.min(DIACRITICS.len());
@@ -145,7 +172,14 @@ fn prepare_svg(bytes: &[u8], limits: ImageLimits) -> Result<PreparedImage, LoadE
         tree.size().width().ceil() as u32,
         tree.size().height().ceil() as u32,
     );
-    let (width, height) = pixel_size(natural, limits)?;
+    let (mut width, mut height) = pixel_size(natural, limits)?;
+    // An inline placement enlarges the image to one row, so the vector is drawn at that size.
+    if let Some(scale) = row_scale(natural, limits)
+        && f64::from(natural.1) * scale > f64::from(height)
+    {
+        width = (f64::from(natural.0) * scale).floor().max(1.0) as u32;
+        height = (f64::from(natural.1) * scale).floor().max(1.0) as u32;
+    }
     let mut allocation = Limits::default();
     allocation.max_alloc = Some(128 * 1024 * 1024);
     allocation
@@ -261,5 +295,18 @@ mod tests {
         let image = image::load_from_memory(&prepared.png).unwrap();
         assert_eq!((image.width(), image.height()), (100, 50));
         assert_eq!(image.to_rgba8().get_pixel(50, 25).0, [255, 0, 0, 255]);
+
+        let bytes = br#"<svg xmlns="http://www.w3.org/2000/svg" width="20" height="10"/>"#;
+        let prepared = prepare(
+            bytes,
+            ImageLimits {
+                columns: 10,
+                rows: 20,
+                cell_pixels: Some((10, 20)),
+            },
+        )
+        .unwrap();
+        let image = image::load_from_memory(&prepared.png).unwrap();
+        assert_eq!((image.width(), image.height()), (40, 20));
     }
 }

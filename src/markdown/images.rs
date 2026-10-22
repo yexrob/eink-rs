@@ -8,7 +8,7 @@ use pulldown_cmark::{Event, Parser, Tag, TagEnd};
 use super::{options, render};
 use crate::image::{
     ImageLimits, ImageLoaders, ImagePlacement, ImageRequest, ImageStatus, Job, LoadError,
-    LoadedImage, is_network, rows_at_width, size_in_cells, start_load,
+    LoadedImage, is_network, rows_at_width, size_in_cells, size_in_row, start_load,
 };
 
 /// How a stream shows images. `Alt` is the default.
@@ -54,16 +54,17 @@ impl Images {
         let ImageStatus::Ready(image) = self.statuses.get(index)? else {
             return None;
         };
-        let mut limits = ImageLimits {
+        let limits = ImageLimits {
             columns: self.columns.saturating_sub(indent),
             rows: 20,
             cell_pixels: self.cell_pixels,
         };
         let inline = !alone && rows_at_width(image.natural, limits) <= 1.5;
-        if inline {
-            limits.rows = 1;
-        }
-        let size = size_in_cells(image.natural, limits)?;
+        let size = if inline {
+            size_in_row(image.natural, limits)?
+        } else {
+            size_in_cells(image.natural, limits)?
+        };
         let placement = ImagePlacement {
             image: image.clone(),
             size,
