@@ -64,3 +64,4 @@
 | [020](020-markdown-image-research.md) | 2026-10-22 | 调研 Markdown 图片显示 | 已实施 |
 | [021](021-highlight-long-lines-and-reset.md) | 2026-10-22 | 高亮的长行上限和重置后的排队工作 | 已实施 |
 | [022](022-gpuix-herdr-research.md) | 2026-10-22 | 调研 GPUIX 的终端渲染和 herdr 的图形处理 | 已实施 |
+| [024](024-bingo-research.md) | 2026-10-22 | 调研 bingo 需要的 eink-rs 改动：0.3.0、Composer、控件、Code | 实施中 |
