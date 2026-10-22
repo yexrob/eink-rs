@@ -39,6 +39,14 @@
   - **单元格尺寸未知时**：按宽高 1:2 算行数。
   - **id 的编码按色深**（ink-rs 0.1.7 的 `use_color_level`）：占位符的前景色是 id，降级后的颜色会指向别的图。真彩用 24 位 id 的 `Rgb`；256 色用 8 位 id 的 `Ansi256`，用自己的计数器；低于 256 色时显示 `[alt]`。
   - 拆成两步，每步派一个 Codex：第一步 `image` 模块，第二步 Markdown 接入。
+- 第二步派出之前，用户定（2026-10-22）：
+  - 「模型加载 (Recommended)」：流里的图片由 `MarkdownStream` 加载，和高亮的做法相同。含图片的段在现成的等待队列里排着，后面的段排在它后面；图片就绪、失败或超时后交出。备选是 `use_markdown_stream` 调第一步的 `use_images`，layout effect 把结果交回模型：没有界面的 `MarkdownStream` 拿不到图片，加载状态分在 hook 和模型两处。
+- Claude 按这个选择定第二步的细节：
+  - `MarkdownStream` 加 `set_images(MarkdownImages)`：`Alt`（默认，不加载）、`Probing`（含图片的段等着，不加载）、`Kitty { loaders, cell_pixels, color_level }`。`use_markdown_stream` 按 `use_graphics`、`use_color_level` 和上下文里的 `ImageLoaders` 设它。
+  - `set_columns` 给出图片可用的列数，默认 80；`MarkdownTail` 量到自己的宽度后设它，量到之前用窗口列数。段定稿时按当时的列数和缩进算图片尺寸，段带着加载好的图片和尺寸，进 `Static` 后不加载。
+  - 第一步的加载线程、作业和期限从 `image/hook.rs` 抽成不依赖 hook 的函数，`use_images` 和流共用。流的期限按 `tick` 累计的时间算；`use_markdown_stream` 在有段等图片时保持动画时钟运行。没有界面时用 `wait_for_images`，对应 `wait_for_highlights`，阻塞到最早的期限为止。
+  - 表格里的图片显示 `[alt]`：单元格的宽度由列宽决定，放不下占位符的行列。
+  - `examples/markdown.rs --file` 在开 `markdown-image` 时用文件所在目录的 `FileLoader`，不加新示例。
 
 ## 备选与取舍
 
