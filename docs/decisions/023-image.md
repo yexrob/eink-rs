@@ -47,6 +47,12 @@
   - 第一步的加载线程、作业和期限从 `image/hook.rs` 抽成不依赖 hook 的函数，`use_images` 和流共用。流的期限按 `tick` 累计的时间算；`use_markdown_stream` 在有段等图片时保持动画时钟运行。没有界面时用 `wait_for_images`，对应 `wait_for_highlights`，阻塞到最早的期限为止。
   - 表格里的图片显示 `[alt]`：单元格的宽度由列宽决定，放不下占位符的行列。
   - `examples/markdown.rs --file` 在开 `markdown-image` 时用文件所在目录的 `FileLoader`，不加新示例。
+- Ghostty 直连的核对里，用户指出带链接的徽章「展示的太扁了」。主 agent 查到两个原因：测试用的徽章是 sips 把图标压成 90×20 得到的，图本身是扁的；图片按 1 个图片像素对 1 个屏幕像素显示，不放大，Ghostty 报的单元格尺寸是 Retina 的物理像素，一行约 40 px，20 px 高的徽章占半行。kitty 把图片缩放进放置的行列，宽高比不变，行列决定显示的大小。用户定（2026-10-22）：
+  - 「行内图放大到一行高 (Recommended)」：行内图片按一行的高度算列数，终端放大图片填满这一行，宽高比不变；块图片不放大。备选是按单元格的像素高度猜屏幕倍率、全部图片按 CSS 像素显示（倍率靠猜，1 倍屏用大字号时图片被放大），和不改（Retina 上的徽章半行高，和 kitty 的 icat 相同）。
+- Claude 按这个选择定细节，主 agent 自己改：
+  - `decode.rs` 加 `size_in_row`：缩放比取列数上限的宽度和一行的高度给出的两个比例里小的那个，不以 1 为上限，行数是 1。`Images::place` 对行内图片用它，块图片用 `size_in_cells`。
+  - 位图由终端放大。SVG 是矢量图，栅格化的尺寸取块和行内两种显示尺寸里大的那个，放大到一行时不糊。
+  - 测试：`small_inline_image_keeps_text_and_link_on_one_row` 换成矮于一行的图片，断言列数按一行的高度算；`svg_rasterizes_at_display_size` 加一个矮于一行的 SVG，断言栅格化到一行高。
 
 ## 备选与取舍
 
