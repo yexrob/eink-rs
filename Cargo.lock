@@ -256,9 +256,9 @@ checksum = "2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea"
 
 [[package]]
 name = "ink-rs"
-version = "0.1.4"
+version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6b72be3743992e83ee3edc01ef155d17e1aecb4ff219294f919164818a42f778"
+checksum = "25596df22f7ffd2eddd0e9dc43adb873eb7be101c284a7ae69adb5443fa67d1f"
 dependencies = [
  "filedescriptor",
  "ink-rs-macros",
