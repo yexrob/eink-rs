@@ -27,7 +27,8 @@ Components, a CLI framework and an in-app router for
 | `completion` | `cli` plus a `completions <SHELL>` subcommand |
 | `tokio` | `cli` plus async entry points on ink-rs's tokio driver |
 | `markdown` | `eink_rs::markdown` and pulldown-cmark |
-| `markdown-highlight` | `markdown` plus code highlighting with syntect |
+| `highlight` | code highlighting with syntect |
+| `markdown-highlight` | `markdown` plus `highlight` |
 
 No feature is on by default; `eink_rs::ui` needs none.
 

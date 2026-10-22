@@ -178,11 +178,16 @@ pub(crate) struct Wake {
 
 impl Wake {
     #[cfg(feature = "markdown-highlight")]
-    pub(crate) fn notify(self) {
+    pub(crate) fn callback(self) -> Arc<dyn Fn() + Send + Sync> {
+        Arc::new(move || self.notify())
+    }
+
+    #[cfg(feature = "markdown-highlight")]
+    fn notify(&self) {
         if self.queued.swap(true, Ordering::AcqRel) {
             return;
         }
-        let queued = self.queued;
+        let queued = self.queued.clone();
         let store = self.store;
         let generation = self.generation;
         self.app.update(move || {

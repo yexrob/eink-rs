@@ -13,8 +13,6 @@
 //! does not recolor an emitted reference. Unknown code languages use the plain
 //! code color; their first lines wait for the worker to identify the language.
 
-#[cfg(feature = "markdown-highlight")]
-mod highlight;
 mod hook;
 mod piece;
 mod render;

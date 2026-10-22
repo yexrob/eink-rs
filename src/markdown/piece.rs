@@ -29,7 +29,7 @@ pub(crate) enum Kind {
     Line {
         source: String,
         #[cfg(feature = "markdown-highlight")]
-        spans: Option<super::highlight::Spans>,
+        spans: Option<crate::highlight::Spans>,
     },
 }
 
@@ -70,7 +70,7 @@ impl MarkdownPiece {
                 let text = match &self.inner.kind {
                     Kind::Line {
                         spans: Some(spans), ..
-                    } => super::highlight::text(spans),
+                    } => crate::highlight::text(spans),
                     _ => plain_line(source, theme),
                 };
                 #[cfg(not(feature = "markdown-highlight"))]

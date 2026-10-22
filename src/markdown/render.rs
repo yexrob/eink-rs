@@ -11,7 +11,7 @@ use pulldown_cmark::{
 use super::{MarkdownTheme, options};
 
 #[cfg(feature = "markdown-highlight")]
-pub(crate) use super::highlight::Cache;
+pub(crate) use crate::highlight::Cache;
 
 #[cfg(not(feature = "markdown-highlight"))]
 #[derive(Default)]
@@ -571,9 +571,9 @@ impl Builder<'_> {
 
     #[cfg(feature = "markdown-highlight")]
     fn highlight(&self, code: &Code) -> Option<Vec<Text>> {
-        super::highlight::highlight(
+        crate::highlight::highlight(
             &mut self.cache.borrow_mut(),
-            &code.language,
+            &crate::highlight::Lang::Token(code.language.clone()),
             &code.text,
             &self.theme.code_theme,
         )

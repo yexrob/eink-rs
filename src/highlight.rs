@@ -1,9 +1,11 @@
-use std::sync::OnceLock;
+use std::path::Path;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, OnceLock};
 
 use ink_rs::{Color, Text};
 use syntect::easy::HighlightLines;
 use syntect::highlighting::{FontStyle, HighlightState, Highlighter, Style, Theme};
-use syntect::parsing::{ParseState, SyntaxSet};
+use syntect::parsing::{ParseState, SyntaxReference, SyntaxSet};
 use two_face::theme::{EmbeddedLazyThemeSet, EmbeddedThemeName};
 
 thread_local! {
@@ -15,11 +17,43 @@ fn syntaxes() -> &'static SyntaxSet {
     SYNTAXES.get_or_init(two_face::syntax::extra_newlines)
 }
 
+#[derive(Clone, PartialEq, Eq)]
+pub(crate) enum Lang {
+    Token(String),
+    #[allow(dead_code)]
+    File(String),
+}
+
+impl Lang {
+    fn syntax<'a>(&self, syntaxes: &'a SyntaxSet) -> Option<&'a SyntaxReference> {
+        match self {
+            Self::Token(token) => syntaxes.find_syntax_by_token(token),
+            Self::File(file) => {
+                let path = Path::new(file);
+                let name = path.file_name()?.to_str()?;
+                let extension = path.extension().and_then(|value| value.to_str());
+                syntaxes.find_syntax_by_extension(name).or_else(|| {
+                    extension.and_then(|extension| {
+                        syntaxes
+                            .find_syntax_by_extension(extension)
+                            .or_else(|| syntaxes.find_syntax_by_token(extension))
+                    })
+                })
+            }
+        }
+    }
+}
+
+pub(crate) fn block_id() -> u64 {
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+    NEXT.fetch_add(1, Ordering::Relaxed)
+}
+
 /// The highlighted lines of the last code block, so a block that grows
 /// line by line highlights only its new lines.
 #[derive(Default)]
 pub(crate) struct Cache {
-    key: (String, String),
+    key: Option<(Lang, String)>,
     lines: Vec<Line>,
 }
 
@@ -32,12 +66,12 @@ struct Line {
 /// Highlights `code` as `language`, or returns `None` for an unknown language.
 pub(crate) fn highlight(
     cache: &mut Cache,
-    language: &str,
+    language: &Lang,
     code: &str,
     theme: &str,
 ) -> Option<Vec<Text>> {
     let syntaxes = syntaxes();
-    let syntax = syntaxes.find_syntax_by_token(language)?;
+    let syntax = language.syntax(syntaxes)?;
     THEMES.with(|themes| {
         let name = EmbeddedLazyThemeSet::theme_names()
             .iter()
@@ -45,7 +79,7 @@ pub(crate) fn highlight(
             .copied()
             .unwrap_or(EmbeddedThemeName::Ansi);
         let theme = themes.get(name);
-        let key = (language.to_owned(), name.as_name().to_owned());
+        let key = Some((language.clone(), name.as_name().to_owned()));
         if cache.key != key {
             cache.key = key;
             cache.lines.clear();
@@ -145,11 +179,11 @@ pub(crate) enum Work {
     Line {
         block: u64,
         id: u64,
-        language: String,
+        language: Lang,
         theme: String,
         source: String,
         reply: std::sync::mpsc::Sender<ResultLine>,
-        wake: Option<super::hook::Wake>,
+        wake: Option<Arc<dyn Fn() + Send + Sync>>,
         unknown: std::sync::Arc<std::sync::atomic::AtomicBool>,
         /// Gone once the stream is dropped, so its queued lines are skipped.
         stream: std::sync::Weak<()>,
@@ -194,8 +228,8 @@ pub(crate) fn submit(work: Work) {
                                 .unwrap_or(EmbeddedThemeName::Ansi);
                             let theme = themes.get(name);
                             let state = blocks.entry(block).or_insert_with(|| {
-                                syntaxes
-                                    .find_syntax_by_token(&language)
+                                language
+                                    .syntax(&syntaxes)
                                     .map(|syntax| HighlightLines::new(syntax, theme).state())
                             });
                             if state.is_none() {
@@ -209,7 +243,7 @@ pub(crate) fn submit(work: Work) {
                             });
                             let _ = reply.send(ResultLine { id, spans });
                             if let Some(wake) = wake {
-                                wake.notify();
+                                wake();
                             }
                         }
                     }

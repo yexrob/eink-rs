@@ -36,8 +36,8 @@ pub struct MarkdownStream {
     links: render::Links,
     #[cfg(feature = "markdown-highlight")]
     results: (
-        std::sync::mpsc::Sender<super::highlight::ResultLine>,
-        std::sync::mpsc::Receiver<super::highlight::ResultLine>,
+        std::sync::mpsc::Sender<crate::highlight::ResultLine>,
+        std::sync::mpsc::Receiver<crate::highlight::ResultLine>,
     ),
     #[cfg(feature = "markdown-highlight")]
     code_theme: String,
@@ -229,7 +229,7 @@ impl MarkdownStream {
     }
 
     #[cfg(feature = "markdown-highlight")]
-    fn accept(&mut self, result: super::highlight::ResultLine) {
+    fn accept(&mut self, result: crate::highlight::ResultLine) {
         if let Some(pending) = self
             .pending
             .get_mut((result.id as usize).saturating_sub(self.count))
@@ -343,14 +343,14 @@ impl MarkdownStream {
                 && !fence.unknown.load(std::sync::atomic::Ordering::Acquire)
             {
                 let id = (self.count + self.pending.len()) as u64;
-                super::highlight::submit(super::highlight::Work::Line {
+                crate::highlight::submit(crate::highlight::Work::Line {
                     block: fence.id,
                     id,
-                    language: fence.language.clone(),
+                    language: crate::highlight::Lang::Token(fence.language.clone()),
                     theme: self.code_theme.clone(),
                     source: source.clone(),
                     reply: self.results.0.clone(),
-                    wake,
+                    wake: wake.map(super::hook::Wake::callback),
                     unknown: fence.unknown.clone(),
                     stream: std::sync::Arc::downgrade(&self.alive),
                 });
@@ -382,7 +382,7 @@ impl MarkdownStream {
         if let Some(_fence) = self.fence.take() {
             #[cfg(feature = "markdown-highlight")]
             if !_fence.language.is_empty() {
-                super::highlight::submit(super::highlight::Work::Close(_fence.id));
+                crate::highlight::submit(crate::highlight::Work::Close(_fence.id));
             }
         }
     }
@@ -427,11 +427,7 @@ impl MarkdownStream {
                     #[cfg(feature = "markdown-highlight")]
                     unknown: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
                     #[cfg(feature = "markdown-highlight")]
-                    id: {
-                        use std::sync::atomic::{AtomicU64, Ordering};
-                        static NEXT: AtomicU64 = AtomicU64::new(0);
-                        NEXT.fetch_add(1, Ordering::Relaxed)
-                    },
+                    id: crate::highlight::block_id(),
                 });
                 self.stable = line_end;
                 if line_end < end {

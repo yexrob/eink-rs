@@ -25,7 +25,8 @@ router = ["dep:eink-rs-macros"]
 completion = ["cli", "dep:clap_complete"]
 tokio = ["cli", "ink-rs/tokio"]
 markdown = ["dep:pulldown-cmark"]
-markdown-highlight = ["markdown", "dep:syntect", "dep:two-face"]
+highlight = ["dep:syntect", "dep:two-face"]
+markdown-highlight = ["markdown", "highlight"]
 
 [dependencies]
 clap = { version = "4", optional = true, features = ["derive"] }
