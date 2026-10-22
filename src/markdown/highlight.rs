@@ -2,7 +2,7 @@ use std::sync::OnceLock;
 
 use ink_rs::{Color, Text};
 use syntect::easy::HighlightLines;
-use syntect::highlighting::{FontStyle, HighlightState, Style};
+use syntect::highlighting::{FontStyle, HighlightState, Highlighter, Style, Theme};
 use syntect::parsing::{ParseState, SyntaxSet};
 use two_face::theme::{EmbeddedLazyThemeSet, EmbeddedThemeName};
 
@@ -64,14 +64,9 @@ pub(crate) fn highlight(
         );
         let mut texts: Vec<Text> = cache.lines.iter().map(|line| text(&line.spans)).collect();
         for source in &sources[reused..] {
-            let mut lines = HighlightLines::from_state(theme, state.0, state.1);
-            let spans: Vec<(Style, String)> = lines
-                .highlight_line(source, syntaxes)
-                .ok()?
-                .into_iter()
-                .map(|(style, piece)| (style, piece.trim_end_matches(['\r', '\n']).to_owned()))
-                .collect();
-            state = lines.state();
+            let (next, spans) = highlight_line(state, source, theme, syntaxes);
+            state = next;
+            let spans = spans?;
             texts.push(text(&spans));
             // The last line may still grow; only complete lines are kept.
             if source.ends_with('\n') {
@@ -84,6 +79,34 @@ pub(crate) fn highlight(
         }
         Some(texts)
     })
+}
+
+/// syntect takes up to 6 ms on a line of 1000 bytes, and the time grows
+/// faster than the length.
+const MAX_LINE: usize = 1000;
+
+/// Highlights one line from `state` and returns the state after it. A line
+/// over `MAX_LINE` bytes keeps the theme's default style and leaves the state
+/// as it was, as Shiki does.
+fn highlight_line(
+    state: (HighlightState, ParseState),
+    source: &str,
+    theme: &Theme,
+    syntaxes: &SyntaxSet,
+) -> ((HighlightState, ParseState), Option<Spans>) {
+    let content = source.trim_end_matches(['\r', '\n']);
+    if content.len() > MAX_LINE {
+        let style = Highlighter::new(theme).get_default();
+        return (state, Some(vec![(style, content.to_owned())]));
+    }
+    let mut lines = HighlightLines::from_state(theme, state.0, state.1);
+    let spans = lines.highlight_line(source, syntaxes).ok().map(|parts| {
+        parts
+            .into_iter()
+            .map(|(style, piece)| (style, piece.trim_end_matches(['\r', '\n']).to_owned()))
+            .collect()
+    });
+    (lines.state(), spans)
 }
 
 pub(crate) fn text(spans: &[(Style, String)]) -> Text {
@@ -172,22 +195,11 @@ pub(crate) fn submit(work: Work) {
                             if state.is_none() {
                                 unknown.store(true, std::sync::atomic::Ordering::Release);
                             }
-                            let spans = state.take().and_then(|(highlight, parse)| {
-                                let mut lines = HighlightLines::from_state(theme, highlight, parse);
-                                let result =
-                                    lines.highlight_line(&source, &syntaxes).ok().map(|parts| {
-                                        parts
-                                            .into_iter()
-                                            .map(|(style, text)| {
-                                                (
-                                                    style,
-                                                    text.trim_end_matches(['\r', '\n']).to_owned(),
-                                                )
-                                            })
-                                            .collect()
-                                    });
-                                *state = Some(lines.state());
-                                result
+                            let spans = state.take().and_then(|current| {
+                                let (next, spans) =
+                                    highlight_line(current, &source, theme, &syntaxes);
+                                *state = Some(next);
+                                spans
                             });
                             let _ = reply.send(ResultLine { id, spans });
                             if let Some(wake) = wake {
