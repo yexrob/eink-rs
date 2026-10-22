@@ -60,3 +60,4 @@
 | [016](016-markdown-stream.md) | 2026-10-22 | Markdown 流式渲染：先做 demo | 已实施 |
 | [017](017-ink-rs-0-1-4.md) | 2026-10-22 | 升级 ink-rs 到 0.1.4 | 已实施 |
 | [018](018-markdown-stream-formal.md) | 2026-10-22 | Markdown 流式渲染：正式实施 | 实施中 |
+| [019](019-pierre-highlight-research.md) | 2026-10-22 | 调研 pierre 的高亮方案 | 实施中 |
