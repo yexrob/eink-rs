@@ -151,6 +151,8 @@ pub(crate) enum Work {
         reply: std::sync::mpsc::Sender<ResultLine>,
         wake: Option<super::hook::Wake>,
         unknown: std::sync::Arc<std::sync::atomic::AtomicBool>,
+        /// Gone once the stream is dropped, so its queued lines are skipped.
+        stream: std::sync::Weak<()>,
     },
     Close(u64),
 }
@@ -180,7 +182,11 @@ pub(crate) fn submit(work: Work) {
                             reply,
                             wake,
                             unknown,
+                            stream,
                         } => {
+                            if stream.strong_count() == 0 {
+                                continue;
+                            }
                             let name = EmbeddedLazyThemeSet::theme_names()
                                 .iter()
                                 .find(|name| name.as_name() == theme)

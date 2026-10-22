@@ -41,6 +41,9 @@ pub struct MarkdownStream {
     ),
     #[cfg(feature = "markdown-highlight")]
     code_theme: String,
+    /// Lets the highlight thread skip the queued lines of a dropped stream.
+    #[cfg(feature = "markdown-highlight")]
+    alive: std::sync::Arc<()>,
 }
 
 struct Pending {
@@ -95,6 +98,8 @@ impl Default for MarkdownStream {
             results: std::sync::mpsc::channel(),
             #[cfg(feature = "markdown-highlight")]
             code_theme: "ansi".into(),
+            #[cfg(feature = "markdown-highlight")]
+            alive: std::sync::Arc::new(()),
         }
     }
 }
@@ -347,6 +352,7 @@ impl MarkdownStream {
                     reply: self.results.0.clone(),
                     wake,
                     unknown: fence.unknown.clone(),
+                    stream: std::sync::Arc::downgrade(&self.alive),
                 });
                 Some(id)
             } else {
