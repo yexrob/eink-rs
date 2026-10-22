@@ -1,7 +1,7 @@
 # 调研 GPUIX 的终端渲染和 herdr 的图形处理
 
 - 日期：2026-10-22
-- 状态：实施中
+- 状态：已实施
 - 提交：无
 - Brief：[gpuix-herdr](briefs/gpuix-herdr.md)
 
@@ -40,3 +40,18 @@
 - tmux 对照：经透传的查询回复能否回到程序。
 - 按直连、tmux、herdr、herdr 套 tmux、SSH 五种环境，修订探测和透传的设计。
 - 报告用中文，不用副词。
+
+## 结果
+
+Sonnet 子 agent 交回报告。主 agent 核对了三处：herdr 的 `crates/ghostty-vt/src/lib.rs:208` 定义 `U+10EEEE` 占位符，`config.rs` 的 `kitty_graphics_enabled` 默认 `true`；tmux 3.6b 的 `input_exit_apc` 把 APC 内容设为窗格标题；ink-rs 的帧输出用 `?2026` 包裹（`src/app.rs`）。
+
+- **GPUIX 的终端模式**：整屏一张位图。GPU 离屏渲染，回读 RGBA；本机用共享内存（`t=s`），每帧经 pty 的是约 100 字节的命令，SSH 下 zlib 压缩后内联分块；同一个图像 id 原子替换，外面包 `?2026`；直接放置，备用屏，没有文字层，没有 scrollback；SSH 下每帧后发 `a=q` 作围栏，在途不超过两帧。它不检测终端名字，靠 `a=q,t=s` 加 DA1 判断终端能否读共享内存。README 写明不支持 tmux。
+- **对 ink-rs 和 eink-rs**：整屏位图不适合文字界面（没有 scrollback、不能选择复制、要 GPU 栈）。可借的是传输手法：本地文件按路径传（`t=f`）、临时文件（`t=t`），不需要 `unsafe`；共享内存要 `mmap`，需要 `unsafe`。同 id 替换、`?2026`、`a=q` 围栏留给视频。
+- **herdr**（源码 https://github.com/herdrdev/herdr ，0.9.5）：和 tmux 一样，用 libghostty 解析每个 pane 的输出，自己重绘外层终端。pane 里的 kitty 图形命令由 herdr 接收，支持占位符和虚拟放置，再用直接放置发给外层终端；默认开启。查询由 herdr 自己回答：`a=q` 回 `OK`，DA1 回 `CSI ? 62;22 c`，`CSI 16 t` 和 `TIOCGWINSZ` 的像素字段按外层单元格尺寸填写。`ESC P tmux;` 透传被丢弃。pane 环境有 `TERM_PROGRAM=herdr`、`HERDR_ENV=1`，`TMUX`、`KITTY_WINDOW_ID` 等外层标记被删掉。herdr 跳过带压缩的放置。
+- **tmux 3.6b**：没有 kitty 图形；`allow-passthrough on` 时转发包裹的字节；自己回答 DA1 和 `CSI 16 t`，所以 DA1 在 tmux 里做不了外层回复的哨兵，要包裹后发给外层。外层的 kitty 回复能否回到程序，报告读源码的推断和 GPUIX 作者的说法不一致，要实测。tmux 主分支新加的 kitty 支持拒绝 `U=1`。
+- **修订的探测**：kitty 查询、`CSI 16 t`、DA1 哨兵；`TMUX` 有值时包裹，herdr 内不包裹；herdr 不需要专门的代码。herdr 套 tmux、tmux 套 herdr 的组合程序识别不了，超时后按不支持处理，列为限制。
+- **待手测**：tmux 里包裹查询的回复、大块数据是否截断、占位符是否保留；herdr 里占位符、滚动、resize、detach 后的表现。
+
+报告没有查清：tmux 3.6b 里外层回复的实际行为；herdr 里占位符的实际表现；tmux 哪个版本加入 `image-kitty.c`。
+
+方案和用户定稿后，在 ink-rs 和 eink-rs 新开实施记录。

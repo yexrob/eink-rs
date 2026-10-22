@@ -63,4 +63,4 @@
 | [019](019-pierre-highlight-research.md) | 2026-10-22 | 调研 pierre 的高亮方案 | 已实施 |
 | [020](020-markdown-image-research.md) | 2026-10-22 | 调研 Markdown 图片显示 | 已实施 |
 | [021](021-highlight-long-lines-and-reset.md) | 2026-10-22 | 高亮的长行上限和重置后的排队工作 | 已实施 |
-| [022](022-gpuix-herdr-research.md) | 2026-10-22 | 调研 GPUIX 的终端渲染和 herdr 的图形处理 | 实施中 |
+| [022](022-gpuix-herdr-research.md) | 2026-10-22 | 调研 GPUIX 的终端渲染和 herdr 的图形处理 | 已实施 |
