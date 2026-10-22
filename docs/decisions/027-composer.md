@@ -1,8 +1,8 @@
 # 受控的多行输入框 `Composer`
 
 - 日期：2026-10-22
-- 状态：实施中
-- 提交：无
+- 状态：已实施
+- 提交：`d6ecba8` feat(ui): add a controlled multiline Composer
 - Brief：[composer](briefs/composer.md)；需求：[bingo-composer](briefs/bingo-composer.md)
 
 ## 背景
@@ -49,3 +49,12 @@ bingo 要一个编码 agent 的提示输入框，同 Claude Code。文字归宿�
 一个 Codex worker，worktree `wt/eink-composer`，基于 main。ink-rs 0.1.7 发布前，worktree 的 `Cargo.toml` 用 `[patch.crates-io]` 指向 ink-rs 合入 074 之后的快照，提交前去掉。worker 不提交，不改文档。brief 见 [composer](briefs/composer.md)：新增 `src/ui/composer.rs`、`tests/composer.rs`、`examples/composer.rs`；改 `src/ui/mod.rs`、`src/ui/input.rs`（共用 helper）、`examples/quill/`。测试：reducer 每组键一例，含 CJK、ZWJ emoji、折行后的上下移动、`\` 加 Enter、历史边界；渲染的长高和内滚、行尾的宽字形、`on_caret`；受控的改写、同批两键、不采纳；粘贴；光标随上方的行变长移动。验收：fmt；clippy 两组 feature；`--lib`；`--test text_input`；新增的测试文件；`-p quill`。
 
 主 agent 集成：review，提交，全量测试，`docs/design.md` 的 ui 一节，在 tmux `ink-rs` 会话里跑示例核对（含输入法），补结果，删 worktree。进 0.2.2 之后的版本。
+
+## 结果
+
+- `d6ecba8`：`ui::Composer`；无头的 `reduce_composer`、`composer_caret`；类型 `ComposerState`、`ComposerAction`、`Edit`、`Direction`、`Reduced`、`Caret`。`reduce_input` 和 `reduce_composer` 共用私有的 `grapheme_offsets`。quill 的 `composer.rs` 换成 Composer，去掉前缀的删字推算、提及的字形偏移绕行、手画的光标和 `\n` 处理。design.md 加「Composer」一节。
+- worker 补了 brief 没定的边界：`max_rows == 0` 不限行数；光标落在字形中间时钳到字形起点；宽度为 0 按 1 列算；窄于一个字形的框截断显示。报告没有 ink-rs 的缺口。
+- 测试：`tests/composer.rs` 13 例。
+- 全量（worktree 用 `[patch.crates-io]` 指向 ink-rs 的 `2da8c43`）：fmt、两组 feature 的 clippy、`cargo test --workspace --all-features` 151 个测试通过。
+- 手动核对（tmux `ink-rs` 会话，`examples/composer.rs`）：中文和英文混排时终端光标的列正确；折行后的行和列正确；Up 按视觉行移动；Alt+Enter 和 `\` 加 Enter 换行；提交后 `Static` 的历史变长，光标跟着下移一行；Ctrl+C 退出。输入法的候选框由用户在真实终端里核对，答「没问题 这两个都 我测试过了」。
+- 提交在 `wt/composer` 分支上做成，不含 patch 和 `Cargo.lock`。ink-rs 0.1.7 发布后 rebase 到 `833a91a`（依赖升到 0.1.7）之上合入 main，`src/ui/mod.rs`、design.md 与 026 冲突，保留两边。用户选「带上控件、Composer、Code (Recommended)」，进 0.3.0（见 [030](030-release-0-3-0.md)）。

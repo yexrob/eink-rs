@@ -68,7 +68,7 @@
 | [024](024-bingo-research.md) | 2026-10-22 | 调研 bingo 需要的 eink-rs 改动：0.3.0、Composer、控件、Code | 已实施 |
 | [025](025-list-fence.md) | 2026-10-22 | 列表项里的代码块按行定稿 | 已实施 |
 | [026](026-controls.md) | 2026-10-22 | Button、受控的 TextInput 和 Select、焦点环 | 已实施 |
-| [027](027-composer.md) | 2026-10-22 | 受控的多行输入框 `Composer` | 实施中 |
+| [027](027-composer.md) | 2026-10-22 | 受控的多行输入框 `Composer` | 已实施 |
 | [028](028-code.md) | 2026-10-22 | `Code` 组件：行号和统一 diff | 实施中 |
 | [029](029-stream-held-gap.md) | 2026-10-22 | 流式 Markdown：尾部首块的空行 | 已实施 |
 | [030](030-release-0-3-0.md) | 2026-10-22 | 发布 0.3.0 | 进行中 |
