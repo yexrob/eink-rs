@@ -155,3 +155,17 @@ Your final message for each part is its report, in Chinese, without adverbs. Par
 - every deviation from this brief, and why, and any ink-rs gap;
 - the tests you added;
 - the exact commands you ran and their results.
+
+## Follow-up for part 2
+
+Sent with `codex exec resume` after part 1 was committed:
+
+```text
+Part 1 is committed as is, with docs updated by the main agent. Proceed with part 2 as the brief describes.
+
+- `Cargo.lock` now selects the patched ink-rs 0.1.6, which has `Scope::use_color_level`.
+- Remove the temporary `dead_code` allows: the one on the `highlight` module in `src/lib.rs` and the one on `Lang::File`. `Code` uses both.
+- The background thread is named after Markdown; give it a neutral name if one appears in the code.
+- Leave the `[patch.crates-io]` section in `Cargo.toml` as it is.
+- Run the part 2 commands from the brief and end your turn with the part 2 report.
+```
