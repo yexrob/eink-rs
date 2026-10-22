@@ -59,6 +59,6 @@
 | [015](015-quill-demo.md) | 2026-10-21 | 编码助手示例 `quill` | 已实施 |
 | [016](016-markdown-stream.md) | 2026-10-22 | Markdown 流式渲染：先做 demo | 已实施 |
 | [017](017-ink-rs-0-1-4.md) | 2026-10-22 | 升级 ink-rs 到 0.1.4 | 已实施 |
-| [018](018-markdown-stream-formal.md) | 2026-10-22 | Markdown 流式渲染：正式实施 | 实施中 |
+| [018](018-markdown-stream-formal.md) | 2026-10-22 | Markdown 流式渲染：正式实施 | 已实施 |
 | [019](019-pierre-highlight-research.md) | 2026-10-22 | 调研 pierre 的高亮方案 | 已实施 |
 | [020](020-markdown-image-research.md) | 2026-10-22 | 调研 Markdown 图片显示 | 实施中 |

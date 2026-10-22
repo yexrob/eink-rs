@@ -1,8 +1,8 @@
 # Markdown 流式渲染：正式实施
 
 - 日期：2026-10-22
-- 状态：实施中
-- 提交：无
+- 状态：已实施
+- 提交：`c9a9956` chore(deps): update ink-rs to 0.1.5；`5f69144` feat(markdown): stream replies into Static pieces；`bac1f4d` feat(examples): time markdown streams with markdown-stress
 - Brief：[markdown-stream](briefs/markdown-stream.md)、[markdown-stream-gaps](briefs/markdown-stream-gaps.md)
 
 ## 背景
@@ -210,3 +210,61 @@ Codex 的会话接着做，补充的 brief 见 [markdown-stream-gaps](briefs/mar
      - 推送的总时间和输入大小成正比；
      - 表格、段落和列表项里的长代码块只报数字，记为已知限制：列表按项定稿，一项写完前留在尾部。
    - tmux 里用 demo 的 `--file`、`--rate` 跑生成的大文件，`--fps 120` 下平均不低于 115 fps。
+
+## 结果
+
+### 实施
+
+Codex 跑了两轮。第一轮停在 ink-rs 缺的两个原语上，用户的决定见上面的「缺口」；ink-rs 的记录 066 加了 `Static::from_fn`，随 ink-rs 0.1.5 发布。第二轮交回模型、hook、高亮线程、demo 和两个测试，报告列了三处偏离：
+
+1. 未知语言的头几行要等后台线程判定语言，不能在行写完时输出。语法集在后台加载，UI 线程判断不了语言在不在。
+2. 脚注引用用正文颜色。pulldown-cmark 按定义在不在识别脚注引用，引用进 `Static` 后，后到的定义改不了它的颜色。
+3. hook 的测试用 `mount` 驱动生产者线程，用 `render_with` 比较累计的 `Static` 行和最终帧：`TestApp` 没有 `last_frame()`。
+
+主 agent review 后改了：
+
+- `on_piece` 的文档写明回调里不能调用自己的 stream。
+- 删掉 `MarkdownStreamHandle::tail()`，和 `MarkdownTail::new` 重复。
+- demo 恢复提示行、spinner、结束摘要和中文状态栏。
+- demo 的 fps 读数统计的是 render 次数，`--fps 120` 下显示 180–214：ink-rs 有工作就提交，提交次数多于绘制次数。改为统计一个动画时钟最近一秒的 tick 数，时钟在一个绘制窗口里 tick 不超过一次。
+- README 和 `docs/design.md` 写 Markdown 模块。
+
+依赖换成 ink-rs 0.1.5 后：fmt、三套 feature 的 clippy 通过，`cargo test --workspace --all-features` 138 个测试通过。
+
+### 压测
+
+`examples/markdown-stress.rs`，release，120 fps，每帧 64 B（另注的除外），p50 / p99 / max（ms）。第一列是 ink-rs 0.1.4 加 `Static::from_fn`，第二列是 ink-rs 0.1.5：
+
+| 场景 | 0.1.4 | 0.1.5 |
+|---|---|---|
+| Rust 代码块 5000 行 | 0.36 / 1.52 / 7.70 | 0.21 / 0.64 / 5.25 |
+| TS 代码块 5000 行，含语法第一次编译 | 0.35 / 0.99 / 8.15 | 0.22 / 0.41 / 2.09 |
+| 300 项列表 | 0.33 / 0.78 / 1.98 | 0.20 / 0.32 / 0.53 |
+| 256 KB 混合 | 0.36 / 1.38 / 26.9 | 0.22 / 0.61 / 1.65 |
+| 512 KB 混合 | 0.35 / 0.97 / 13.8 | 0.22 / 0.62 / 9.22 |
+| 1 MB 混合 | 0.36 / 0.92 / 9.62 | 0.23 / 0.64 / 21.27 |
+| 300 行表格（已知限制） | 8.96 / 38.31 / 66.77 | 4.58 / 9.87 / 20.09 |
+| 20 KB 长段落（已知限制） | 7.65 / 15.31 / 40.71 | 5.13 / 10.05 / 12.41 |
+| 列表项里 300 行代码（已知限制） | 37.8 / 134 / 199 | 7.22 / 13.73 / 89.61 |
+| 1 MB 混合，每帧 4 KB | 12.97 / 36.9 / 288 | 9.02 / 26.17 / 177.53 |
+| 100 KB 积压，pacing 300 ms | p99 12.74，max 125 | p99 6.01，max 112 |
+
+对照方案的阈值：
+
+- p99 ≤ 4 ms：已知限制以外的场景达到。
+- max ≤ 8.33 ms：代码块和 300 项列表达到。混合回答有单帧超出：0.1.5 下 512 KB 有 1 帧（共 8153 帧），1 MB 有 2 帧（共 15600 帧）。1 MB 场景重跑两次，0.1.5 的 max 是 23.51、16.08 ms，0.1.4 的是 90.92、8.70 ms，随机器负载（load average 4–27）起落。
+- 推送总时间和输入大小成正比：0.1.5 下 256 KB 3.83、512 KB 3.89、1 MB 4.00 ms/KB。
+- demo 在 tmux 里用 1 MB 文件跑，`--fps 120`：8 KB/s 下 119–120 fps，64 KB/s 下 120 fps，达到不低于 115 的要求。
+
+压测之后的决定：
+
+- 采样显示帧时间的大头在 ink-rs 的 squash 和 reconcile。主 agent 建议 0.1.5 照发、性能放到 0.1.6，用户选「性能做进 0.1.5」，见 ink-rs 的记录 068。上表第二列是它的结果。
+- 一帧到达上千段（每帧 4 KB、积压 100 KB）时卡一帧：用户选「接受，记为已知限制」。
+- 列表项里的长代码块：用户选「保留按项定稿」，记为已知限制。
+
+### 后续
+
+- pierre 的高亮调研见 [019](019-pierre-highlight-research.md)，用户同意做其中的长行上限和重置后丢掉旧流的工作，另开记录。
+- Markdown 的图片显示在调研，见 [020](020-markdown-image-research.md)。
+
+worktree `markdown-formal` 和分支在合入 main 后删掉。
