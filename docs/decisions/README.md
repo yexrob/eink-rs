@@ -70,3 +70,4 @@
 | [026](026-controls.md) | 2026-10-22 | Button、受控的 TextInput 和 Select、焦点环 | 实施中 |
 | [027](027-composer.md) | 2026-10-22 | 受控的多行输入框 `Composer` | 实施中 |
 | [028](028-code.md) | 2026-10-22 | `Code` 组件：行号和统一 diff | 实施中 |
+| [029](029-stream-held-gap.md) | 2026-10-22 | 流式 Markdown：尾部首块的空行 | 已实施 |

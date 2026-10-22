@@ -68,6 +68,9 @@ struct Frame {
     started: bool,
     list: Option<List>,
     gap: u16,
+    // The tail's first block was given `gap` and the number in `list` when
+    // it was held; read again, it would match its own list.
+    held: bool,
 }
 
 struct Fence {
@@ -516,20 +519,24 @@ impl MarkdownStream {
         if blocks.is_empty() {
             return;
         }
+        let held = std::mem::take(&mut self.frame_mut().held);
         for (index, block) in blocks.iter().enumerate() {
             let start = stripped.offset(block.start);
             let stop_at = blocks.get(index + 1).map_or(text.len(), |next| next.start);
             let stop = stripped.offset(stop_at);
-            let continuation = match (self.frame().list, block.list) {
-                (Some(old), Some(new)) => old.marker == new.marker,
-                _ => false,
-            };
-            let number = if continuation {
+            let held = held && index == 0;
+            let continuation = !held
+                && match (self.frame().list, block.list) {
+                    (Some(old), Some(new)) => old.marker == new.marker,
+                    _ => false,
+                };
+            let number = if continuation || held {
                 self.frame().list.and_then(|list| list.next)
             } else {
                 block.list.and_then(|list| list.next)
             };
-            let gap = if continuation || (self.frames.len() > 1 && self.frame().started) {
+            let gap = if !held && (continuation || (self.frames.len() > 1 && self.frame().started))
+            {
                 u16::from(render::blank_before(&self.source, start))
             } else {
                 self.frame().gap
@@ -614,6 +621,7 @@ impl MarkdownStream {
             }
             if index + 1 == blocks.len() && !finish {
                 self.stable = start;
+                self.frame_mut().held = true;
                 self.frame_mut().gap = gap;
                 self.frame_mut().list = block.list.map(|list| List {
                     next: number,
