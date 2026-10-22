@@ -1,8 +1,8 @@
 # 高亮的长行上限和重置后的排队工作
 
 - 日期：2026-10-22
-- 状态：实施中
-- 提交：无
+- 状态：已实施
+- 提交：`39ea4af` perf(markdown): leave lines over 1000 bytes unhighlighted；`722997e` perf(markdown): skip queued highlight lines of dropped streams
 - Brief：无
 
 ## 背景
@@ -50,3 +50,13 @@
 - `src/markdown/stream.rs`：流加 `Arc<()>`，提交时附上 `Weak`。
 - 不加测试：上限在共用函数里，流式和整篇的一致由构造保证，现有的一致性测试覆盖调用路径；上限影响的是耗时，量过；跳过丢弃流的工作没有可观察的输出。
 - 验收：`cargo fmt --check`，`cargo clippy --all-targets --features markdown-highlight -- -D warnings`，`cargo test --features markdown-highlight`，全量测试。
+
+## 结果
+
+两个提交，按方案落地，没有偏离。
+
+- `highlight_line` 收拢了整篇和后台线程两份按行高亮的代码，上限在其中。超长行的样式取 `Highlighter::get_default()`，`ansi` 主题下是终端默认色。
+- 后台线程取到 `Work::Line` 时，`Weak` 的强计数为 0 时跳过，不发结果，不唤醒。
+- 主 agent 临时往一致性测试的语料加了一篇文档（Rust 块，中间一行是 1400 字节的 `/* x = 1; …`，前后各一行代码），流式和整篇结果相同；打印整篇渲染，长行是默认色，下一行 `let b = "s"; // c` 按代码上色，没有落进注释。验证后撤掉，没有入库。
+- `cargo fmt --check`、`cargo clippy --workspace --all-targets --all-features -- -D warnings` 通过；`cargo test --workspace` 在默认 feature、`markdown`、`markdown-highlight`、全部 feature 下通过。
+- `docs/design.md` 的「高亮」加了这两条。
