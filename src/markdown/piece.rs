@@ -18,6 +18,8 @@ pub(crate) struct Content {
     pub gap: u16,
     pub kind: Kind,
     pub hang: Rc<[(Marker, bool)]>,
+    #[cfg(feature = "markdown-image")]
+    pub images: super::images::Images,
 }
 
 #[derive(Clone, Copy)]
@@ -50,7 +52,13 @@ impl PartialEq for MarkdownPiece {
 impl MarkdownPiece {
     pub(crate) fn new(gap: u16, kind: Kind, hang: Rc<[(Marker, bool)]>) -> Self {
         Self {
-            inner: Rc::new(Content { gap, kind, hang }),
+            inner: Rc::new(Content {
+                gap,
+                kind,
+                hang,
+                #[cfg(feature = "markdown-image")]
+                images: Default::default(),
+            }),
         }
     }
 
@@ -60,17 +68,33 @@ impl MarkdownPiece {
     }
 
     pub(crate) fn render(&self, theme: &MarkdownTheme, cache: &RefCell<render::Cache>) -> Element {
+        self.render_with(
+            theme,
+            cache,
+            #[cfg(feature = "markdown-image")]
+            &mut super::images::Images::default(),
+        )
+    }
+
+    pub(crate) fn render_with(
+        &self,
+        theme: &MarkdownTheme,
+        cache: &RefCell<render::Cache>,
+        #[cfg(feature = "markdown-image")] images: &mut super::images::Images,
+    ) -> Element {
         let body: Element = match &self.inner.kind {
             Kind::Document {
                 source,
                 number,
                 links,
-            } => render::render_links(
+            } => render::render_document(
                 source,
                 &nested_theme(theme, self.inner.hang.len()),
                 cache,
                 *number,
                 links,
+                #[cfg(feature = "markdown-image")]
+                images,
             ),
             Kind::Opening(language) => {
                 let mut view = View::new();
@@ -119,16 +143,7 @@ pub(crate) fn hanging(
     theme: &MarkdownTheme,
 ) -> Element {
     for (marker, shown) in hang.iter().rev() {
-        let marker = match marker {
-            Marker::Number(number) => format!("{number}."),
-            Marker::Bullet(depth) => theme
-                .bullets
-                .get(depth % theme.bullets.len().max(1))
-                .cloned()
-                .unwrap_or_else(|| "-".into()),
-            Marker::Task(true) => theme.task_done.clone(),
-            Marker::Task(false) => theme.task_open.clone(),
-        };
+        let marker = marker_text(marker, theme);
         let mut column = View::new()
             .width(u16::try_from(text_width(&marker) + 1).unwrap_or(u16::MAX))
             .flex_shrink(0.0);
@@ -149,6 +164,26 @@ pub(crate) fn hanging(
     body
 }
 
+fn marker_text(marker: &Marker, theme: &MarkdownTheme) -> String {
+    match marker {
+        Marker::Number(number) => format!("{number}."),
+        Marker::Bullet(depth) => theme
+            .bullets
+            .get(depth % theme.bullets.len().max(1))
+            .cloned()
+            .unwrap_or_else(|| "-".into()),
+        Marker::Task(true) => theme.task_done.clone(),
+        Marker::Task(false) => theme.task_open.clone(),
+    }
+}
+
+#[cfg(feature = "markdown-image")]
+pub(crate) fn hanging_width(hang: &[(Marker, bool)], theme: &MarkdownTheme) -> usize {
+    hang.iter()
+        .map(|(marker, _)| text_width(&marker_text(marker, theme)) + 1)
+        .sum()
+}
+
 pub(crate) fn plain_line(source: &str, theme: &MarkdownTheme) -> Text {
     let source = source.trim_end_matches(['\r', '\n']);
     Text::new(if source.is_empty() { " " } else { source }).color(theme.code_block_color)
@@ -157,5 +192,15 @@ pub(crate) fn plain_line(source: &str, theme: &MarkdownTheme) -> Text {
 fn piece(cx: &mut Scope, props: &MarkdownPiece) -> Element {
     let theme = use_theme::<MarkdownTheme>(cx);
     let cache = cx.use_memo((), Rc::<RefCell<render::Cache>>::default);
-    props.render(&theme, &cache)
+    #[cfg(not(feature = "markdown-image"))]
+    {
+        props.render(&theme, &cache)
+    }
+    #[cfg(feature = "markdown-image")]
+    {
+        let mut images = props.inner.images.clone();
+        let body = props.render_with(&theme, &cache, &mut images);
+        crate::image::use_image_effect(cx, images.placements);
+        body
+    }
 }

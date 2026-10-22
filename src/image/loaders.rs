@@ -85,7 +85,7 @@ impl Default for ImageLoaders {
     }
 }
 
-pub(super) fn is_network(src: &str) -> bool {
+pub(crate) fn is_network(src: &str) -> bool {
     src.get(..7)
         .is_some_and(|prefix| prefix.eq_ignore_ascii_case("http://"))
         || src

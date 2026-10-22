@@ -14,6 +14,8 @@
 //! code color; their first lines wait for the worker to identify the language.
 
 mod hook;
+#[cfg(feature = "markdown-image")]
+mod images;
 mod piece;
 mod render;
 mod settle;
@@ -32,6 +34,8 @@ use crate::ui::use_theme;
 pub use hook::{
     MarkdownProgress, MarkdownSender, MarkdownStreamHandle, MarkdownTail, use_markdown_stream,
 };
+#[cfg(feature = "markdown-image")]
+pub use images::MarkdownImages;
 pub use piece::MarkdownPiece;
 pub use stream::{MarkdownStream, MarkdownStreamOptions};
 pub use theme::MarkdownTheme;
@@ -67,7 +71,40 @@ fn markdown(cx: &mut Scope, props: &Markdown) -> Element {
     } else {
         Cow::Borrowed(&*props.source)
     };
-    render::render(&source, &theme, &cache)
+    #[cfg(not(feature = "markdown-image"))]
+    {
+        render::render(&source, &theme, &cache)
+    }
+    #[cfg(feature = "markdown-image")]
+    {
+        use crate::image::{use_image_effect, use_images};
+        use ink_rs::{ColorLevel, FlexDirection, GraphicsSupport, Styled, View};
+        let graphics = cx.use_graphics();
+        let level = cx.use_color_level();
+        let (node, columns) = images::use_columns(cx);
+        let links = render::Links::new();
+        let requests = if graphics.support == GraphicsSupport::Kitty
+            && matches!(level, ColorLevel::TrueColor | ColorLevel::Ansi256)
+        {
+            images::requests(&source, &links, columns, graphics.cell_pixels, level)
+        } else {
+            Vec::new()
+        };
+        let mut images = images::Images {
+            statuses: use_images(cx, &requests),
+            columns,
+            cell_pixels: graphics.cell_pixels,
+            ..Default::default()
+        };
+        let body = render::render_document(&source, &theme, &cache, None, &links, &mut images);
+        use_image_effect(cx, images.placements);
+        View::new()
+            .node_ref(node)
+            .width(ink_rs::Percent(100.0))
+            .flex_direction(FlexDirection::Column)
+            .child(body)
+            .into()
+    }
 }
 
 pub(crate) fn options() -> Options {

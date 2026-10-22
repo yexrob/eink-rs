@@ -33,6 +33,8 @@ struct Config {
     prompt: String,
     source: Arc<str>,
     rate: Option<usize>,
+    #[cfg(feature = "markdown-image")]
+    image_base: Option<std::path::PathBuf>,
 }
 
 enum Item {
@@ -96,6 +98,24 @@ fn item(item: &Item, prompt: &str) -> Element {
             .child(Text::new(summary).dim_color(true))
             .into(),
     }
+}
+
+fn root(cx: &mut Scope, config: &Config) -> Element {
+    #[cfg(feature = "markdown-image")]
+    {
+        let base = config.image_base.clone();
+        let loaders = cx.use_memo(base.clone(), move || {
+            let mut loaders = eink_rs::image::ImageLoaders::default();
+            if let Some(base) = base {
+                loaders.local = Some(Arc::new(eink_rs::image::FileLoader::new(base)));
+            }
+            loaders
+        });
+        cx.provide(loaders);
+    }
+    #[cfg(not(feature = "markdown-image"))]
+    let _ = cx;
+    component(demo, config.clone())
 }
 
 fn demo(cx: &mut Scope, config: &Config) -> Element {
@@ -203,6 +223,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         prompt: PROMPT.into(),
         source: Arc::from(ANSWER),
         rate: None,
+        #[cfg(feature = "markdown-image")]
+        image_base: None,
     };
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
@@ -211,6 +233,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "--fps" => config.fps = value.parse::<u32>()?.max(1),
             "--file" => {
                 config.source = Arc::from(std::fs::read_to_string(&value)?);
+                #[cfg(feature = "markdown-image")]
+                {
+                    config.image_base = std::path::Path::new(&value).parent().map(Into::into);
+                }
                 config.prompt = value;
             }
             "--rate" => {
@@ -225,7 +251,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     let fps = config.fps;
     ink_rs::render(
-        component(demo, config),
+        component(root, config),
         Options {
             max_fps: fps,
             ..Options::default()

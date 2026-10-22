@@ -18,10 +18,12 @@ pub(crate) use crate::highlight::Cache;
 pub(crate) struct Cache;
 
 /// Renders a document: top-level blocks one blank line apart.
+#[cfg(not(feature = "markdown-image"))]
 pub(crate) fn render(source: &str, theme: &MarkdownTheme, cache: &RefCell<Cache>) -> Element {
     render_numbered(source, theme, cache, None)
 }
 
+#[cfg(not(feature = "markdown-image"))]
 pub(crate) fn render_numbered(
     source: &str,
     theme: &MarkdownTheme,
@@ -48,6 +50,25 @@ pub(crate) fn render_links(
     number: Option<u64>,
     links: &Links,
 ) -> Element {
+    render_document(
+        source,
+        theme,
+        cache,
+        number,
+        links,
+        #[cfg(feature = "markdown-image")]
+        &mut super::images::Images::default(),
+    )
+}
+
+pub(crate) fn render_document(
+    source: &str,
+    theme: &MarkdownTheme,
+    cache: &RefCell<Cache>,
+    number: Option<u64>,
+    links: &Links,
+    #[cfg(feature = "markdown-image")] images: &mut super::images::Images,
+) -> Element {
     let mut builder = Builder {
         source,
         offset: 0,
@@ -61,17 +82,45 @@ pub(crate) fn render_links(
         code: None,
         html: None,
         table: None,
+        #[cfg(feature = "markdown-image")]
+        images,
     };
     let callback = |link: pulldown_cmark::BrokenLink<'_>| {
         links
             .get(&label(&link.reference))
             .map(|(url, title)| (url.clone().into(), title.clone().into()))
     };
-    for (event, range) in
-        Parser::new_with_broken_link_callback(source, options(), Some(callback)).into_offset_iter()
-    {
+    let events =
+        Parser::new_with_broken_link_callback(source, options(), Some(callback)).into_offset_iter();
+    #[cfg(not(feature = "markdown-image"))]
+    for (event, range) in events {
         builder.offset = range.start;
         builder.event(event);
+    }
+    #[cfg(feature = "markdown-image")]
+    {
+        // Images are numbered in source order, the order `images::requests` loads them.
+        let events = events.collect::<Vec<_>>();
+        let is_image = |event: &Event<'_>| matches!(event, Event::Start(Tag::Image { .. }));
+        let (mut index, mut image) = (0, 0);
+        while let Some((event, range)) = events.get(index) {
+            builder.offset = range.start;
+            if is_image(event) {
+                let end = super::images::image_end(&events, index);
+                if builder.image(image, super::images::alone(&events, index, end)) {
+                    // A placed image replaces its alt text, including images nested in it.
+                    image += events[index..=end]
+                        .iter()
+                        .filter(|(event, _)| is_image(event))
+                        .count();
+                    index = end + 1;
+                    continue;
+                }
+                image += 1;
+            }
+            builder.event(event.clone());
+            index += 1;
+        }
     }
     builder.flush();
     let root = builder.stack.swap_remove(0);
@@ -96,6 +145,8 @@ struct Builder<'a> {
     code: Option<Code>,
     html: Option<String>,
     table: Option<Table>,
+    #[cfg(feature = "markdown-image")]
+    images: &'a mut super::images::Images,
 }
 
 struct Frame {
@@ -116,6 +167,8 @@ impl Frame {
 
 enum Kind {
     Root,
+    #[cfg(feature = "markdown-image")]
+    Paragraph,
     Quote(Option<BlockQuoteKind>),
     List {
         next: Option<u64>,
@@ -239,6 +292,8 @@ impl Builder<'_> {
         match tag {
             Tag::Paragraph => {
                 self.flush();
+                #[cfg(feature = "markdown-image")]
+                self.open(Kind::Paragraph);
             }
             Tag::Heading { level, .. } => {
                 self.flush();
@@ -328,7 +383,19 @@ impl Builder<'_> {
 
     fn end(&mut self, tag: TagEnd) {
         match tag {
-            TagEnd::Paragraph => self.flush(),
+            TagEnd::Paragraph => {
+                self.flush();
+                // A tall inline image splits the paragraph into several blocks.
+                #[cfg(feature = "markdown-image")]
+                {
+                    let mut children = self.close().children;
+                    match children.len() {
+                        0 => {}
+                        1 => self.push(children.pop().expect("paragraph block")),
+                        _ => self.push(column(children, 0).into()),
+                    }
+                }
+            }
             TagEnd::Heading(_) => {
                 self.flush();
                 self.spans.pop();
@@ -418,7 +485,8 @@ impl Builder<'_> {
                     let text = self
                         .inline
                         .as_ref()
-                        .map_or("", |inline| &inline.plain[start..]);
+                        .and_then(|inline| inline.plain.get(start..))
+                        .unwrap_or("");
                     if !self.theme.hyperlinks && !url.is_empty() && text != url {
                         self.run(&format!(" ({url})"), dim());
                     }
@@ -466,6 +534,64 @@ impl Builder<'_> {
         if let Some(inline) = self.inline.take() {
             self.push(inline.text.into());
         }
+        #[cfg(feature = "markdown-image")]
+        for (_, start) in &mut self.links {
+            *start = 0;
+        }
+    }
+
+    #[cfg(feature = "markdown-image")]
+    fn image(&mut self, index: usize, alone: bool) -> bool {
+        if self.table.is_some() {
+            return false;
+        }
+        let indent: usize = self
+            .stack
+            .iter()
+            .map(|frame| match &frame.kind {
+                Kind::Item { marker, task, .. } => {
+                    let marker = match task {
+                        Some(true) => &self.theme.task_done,
+                        Some(false) => &self.theme.task_open,
+                        None => marker,
+                    };
+                    text_width(marker) + 1
+                }
+                Kind::Quote(_) => 2,
+                Kind::Footnote(label) => text_width(label) + 5,
+                _ => 0,
+            })
+            .sum();
+        let Some((placement, inline)) = self.images.place(index, indent, alone) else {
+            return false;
+        };
+        if inline {
+            let url = self
+                .spans
+                .last()
+                .and_then(|span| span.link.as_deref())
+                .filter(|url| self.theme.hyperlinks && !url.is_empty());
+            let text =
+                Text::default().children(crate::image::linked_placeholder_rows(&placement, url));
+            let inline = self.inline.get_or_insert_default();
+            inline.plain.push_str(&" ".repeat(placement.size.columns));
+            inline.text = std::mem::take(&mut inline.text).child(text);
+        } else {
+            if self
+                .inline
+                .as_ref()
+                .is_some_and(|inline| inline.plain.is_empty())
+            {
+                self.inline = None;
+            }
+            self.flush();
+            self.push(
+                column(crate::image::placeholder_rows(&placement), 0)
+                    .flex_shrink(0.0)
+                    .into(),
+            );
+        }
+        true
     }
 
     fn style(&mut self, change: impl FnOnce(&mut Span)) {

@@ -32,6 +32,8 @@ pub struct MarkdownStream {
     fence: Option<Fence>,
     pending: VecDeque<Pending>,
     links: render::Links,
+    #[cfg(feature = "markdown-image")]
+    pub(crate) images: super::images::StreamImages,
     #[cfg(feature = "markdown-highlight")]
     results: (
         std::sync::mpsc::Sender<crate::highlight::ResultLine>,
@@ -44,11 +46,13 @@ pub struct MarkdownStream {
     alive: std::sync::Arc<()>,
 }
 
-struct Pending {
+pub(super) struct Pending {
     start: usize,
     piece: MarkdownPiece,
     #[cfg(feature = "markdown-highlight")]
     waiting: Option<u64>,
+    #[cfg(feature = "markdown-image")]
+    pub(super) images: Option<super::images::Waiting>,
 }
 
 #[derive(Clone, Copy)]
@@ -113,6 +117,8 @@ impl Default for MarkdownStream {
             fence: None,
             pending: VecDeque::new(),
             links: render::Links::new(),
+            #[cfg(feature = "markdown-image")]
+            images: Default::default(),
             #[cfg(feature = "markdown-highlight")]
             results: std::sync::mpsc::channel(),
             #[cfg(feature = "markdown-highlight")]
@@ -188,6 +194,11 @@ impl MarkdownStream {
     }
 
     pub(crate) fn tick_with(&mut self, elapsed: Duration, wake: Option<super::hook::Wake>) {
+        #[cfg(feature = "markdown-image")]
+        {
+            self.images.time += elapsed;
+            self.poll_images();
+        }
         let Some(catch_up) = self.pacing else { return };
         if !self.is_revealing() {
             return;
@@ -207,8 +218,14 @@ impl MarkdownStream {
     /// Takes final pieces in document order. Each piece is returned once.
     pub fn take_pieces(&mut self) -> Vec<MarkdownPiece> {
         self.poll_highlights();
+        #[cfg(feature = "markdown-image")]
+        self.poll_images();
         let mut pieces = Vec::new();
         while self.pending.front().is_some_and(|pending| {
+            #[cfg(feature = "markdown-image")]
+            if pending.images.is_some() {
+                return false;
+            }
             #[cfg(feature = "markdown-highlight")]
             {
                 pending.waiting.is_none()
@@ -245,6 +262,65 @@ impl MarkdownStream {
             return true;
         }
         false
+    }
+
+    /// Sets image handling for future pieces and resolves pieces waiting for the probe.
+    #[cfg(feature = "markdown-image")]
+    pub fn set_images(&mut self, images: super::MarkdownImages) {
+        self.set_images_with(images, None);
+    }
+
+    #[cfg(feature = "markdown-image")]
+    pub(crate) fn set_images_with(
+        &mut self,
+        images: super::MarkdownImages,
+        wake: Option<super::hook::Wake>,
+    ) {
+        self.images.setting = images;
+        for (index, pending) in self.pending.iter_mut().enumerate() {
+            if let Some(waiting) = &mut pending.images {
+                if matches!(self.images.setting, super::MarkdownImages::Alt) && waiting.probing() {
+                    pending.images = None;
+                } else {
+                    self.images.start(waiting, self.count + index, wake.clone());
+                }
+            }
+        }
+        self.poll_images();
+    }
+
+    /// Sets the columns available to images in later pieces; the default is 80.
+    #[cfg(feature = "markdown-image")]
+    pub fn set_columns(&mut self, columns: usize) {
+        self.images.columns = columns;
+    }
+
+    /// Waits for one image result or its deadline. Returns false when no load is pending.
+    #[cfg(feature = "markdown-image")]
+    pub fn wait_for_images(&mut self) -> bool {
+        let waited = self.images.wait(&mut self.pending, self.count);
+        self.poll_images();
+        waited
+    }
+
+    #[cfg(feature = "markdown-image")]
+    pub(crate) fn waiting_for_images(&self) -> bool {
+        self.pending.iter().any(|pending| pending.images.is_some())
+    }
+
+    #[cfg(feature = "markdown-image")]
+    fn poll_images(&mut self) {
+        self.images.poll(&mut self.pending, self.count);
+        for pending in &mut self.pending {
+            if pending
+                .images
+                .as_ref()
+                .is_some_and(super::images::Waiting::ready)
+            {
+                let images = pending.images.take().expect("ready images");
+                pending.piece = images.finish(&pending.piece);
+            }
+        }
     }
 
     #[cfg(feature = "markdown-highlight")]
@@ -344,6 +420,8 @@ impl MarkdownStream {
             piece: MarkdownPiece::new(gap, kind, hang),
             #[cfg(feature = "markdown-highlight")]
             waiting: None,
+            #[cfg(feature = "markdown-image")]
+            images: None,
         });
     }
 
@@ -648,6 +726,12 @@ impl MarkdownStream {
                     links,
                 },
             );
+            #[cfg(feature = "markdown-image")]
+            {
+                let id = self.count + self.pending.len() - 1;
+                let pending = self.pending.back_mut().expect("document piece");
+                pending.images = self.images.enqueue(&pending.piece, id, wake.clone());
+            }
             self.stable = stop;
             self.frame_mut().gap = 1;
             self.frame_mut().list = block.list.map(|list| List {

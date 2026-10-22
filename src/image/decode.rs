@@ -26,6 +26,15 @@ impl ImageLimits {
     }
 }
 
+/// Returns the rows the image covers when only the column limit applies.
+#[cfg(feature = "markdown-image")]
+pub(crate) fn rows_at_width(natural: (u32, u32), limits: ImageLimits) -> f64 {
+    let columns = limits.columns.min(DIACRITICS.len());
+    let (cell_width, cell_height) = limits.pixels();
+    let scale = 1.0_f64.min(columns as f64 * f64::from(cell_width) / f64::from(natural.0));
+    f64::from(natural.1) * scale / f64::from(cell_height)
+}
+
 /// Fits the natural dimensions inside cell limits without enlarging the image.
 pub(crate) fn size_in_cells(natural: (u32, u32), limits: ImageLimits) -> Option<CellSize> {
     let columns = limits.columns.min(DIACRITICS.len());

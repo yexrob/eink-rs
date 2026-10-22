@@ -1,29 +1,14 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
-use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::sync::Arc;
+use std::time::Duration;
 
-use ink_rs::{AnimationOptions, AppHandle, ColorLevel, Scope, State};
+use ink_rs::{AnimationOptions, ColorLevel, Scope, State};
 
-use super::decode::{ImageLimits, prepare};
-use super::loaders::{LOCAL_TIMEOUT, NETWORK_TIMEOUT, is_network, same_loader};
+use super::load::{ImageRequest, ImageStatus, Job, start_load};
+use super::loaders::{is_network, same_loader};
 use super::{ImageLoader, ImageLoaders, LoadError, LoadedImage};
-
-/// A source's state, including its natural pixel dimensions when ready.
-#[derive(Clone)]
-pub(crate) enum ImageStatus {
-    Loading,
-    Ready(Arc<LoadedImage>),
-    Failed,
-}
-
-#[derive(Clone)]
-pub(crate) struct ImageRequest {
-    pub src: String,
-    pub limits: ImageLimits,
-    pub color_level: ColorLevel,
-}
 
 #[derive(Clone)]
 struct Key {
@@ -52,23 +37,6 @@ struct Entry {
 impl Drop for Entry {
     fn drop(&mut self) {
         self.job.cancel();
-    }
-}
-
-struct Job {
-    // Taking the handle releases app liveness even if a custom loader blocks.
-    app: Mutex<Option<AppHandle>>,
-    start: Instant,
-    timeout: Duration,
-}
-
-impl Job {
-    fn cancel(&self) {
-        self.app.lock().expect("image job").take();
-    }
-
-    fn expired(&self) -> bool {
-        self.start.elapsed() >= self.timeout || self.app.lock().expect("image job").is_none()
     }
 }
 
@@ -170,14 +138,10 @@ pub(crate) fn use_images(cx: &mut Scope, requests: &[ImageRequest]) -> Vec<Image
                 if entries.iter().any(|entry| entry.key == key) {
                     continue;
                 }
-                let job = Arc::new(Job {
-                    app: Mutex::new(Some(app.clone())),
-                    start: Instant::now(),
-                    timeout: if is_network(&key.src) {
-                        NETWORK_TIMEOUT
-                    } else {
-                        LOCAL_TIMEOUT
-                    },
+                let completion_key = key.clone();
+                let app = app.clone();
+                let job = Job::new(&key.src, move |job, result| {
+                    complete(store, completion_key, job, result, app);
                 });
                 entries.push(Entry {
                     key: key.clone(),
@@ -185,7 +149,7 @@ pub(crate) fn use_images(cx: &mut Scope, requests: &[ImageRequest]) -> Vec<Image
                     job: job.clone(),
                     started,
                 });
-                start_load(store, key, loader, request.limits, job);
+                start_load(request, loader, job);
             }
         });
     });
@@ -193,67 +157,39 @@ pub(crate) fn use_images(cx: &mut Scope, requests: &[ImageRequest]) -> Vec<Image
     statuses
 }
 
-fn start_load(
+fn complete(
     store: Store,
     key: Key,
-    loader: Arc<dyn ImageLoader>,
-    limits: ImageLimits,
     job: Arc<Job>,
+    result: Result<Arc<LoadedImage>, LoadError>,
+    app: ink_rs::AppHandle,
 ) {
-    let worker_job = job.clone();
-    let worker_key = key.clone();
-    let result = std::thread::Builder::new()
-        .name("eink-image".into())
-        .spawn(move || {
-            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                let bytes = loader.load(&worker_key.src)?;
-                if worker_job.expired() {
-                    return Err(LoadError::new("image load timed out"));
-                }
-                let image = prepare(&bytes, limits)?;
-                LoadedImage::new(image, worker_key.color_level).map(Arc::new)
-            }))
-            .unwrap_or_else(|_| Err(LoadError::new("image loader panicked")));
-            let result = if worker_job.expired() {
-                Err(LoadError::new("image load timed out"))
-            } else {
-                result
-            };
-            complete(store, worker_key, worker_job, result);
+    app.update(move || {
+        store.update(|entries| {
+            if let Some(entry) = entries
+                .borrow_mut()
+                .entries
+                .iter_mut()
+                .find(|entry| entry.key == key && Arc::ptr_eq(&entry.job, &job))
+                && matches!(entry.status, ImageStatus::Loading)
+            {
+                entry.status = match result {
+                    Ok(image) => ImageStatus::Ready(image),
+                    Err(_) => ImageStatus::Failed,
+                };
+            }
         });
-    if let Err(error) = result {
-        complete(store, key, job, Err(error.into()));
-    }
-}
-
-fn complete(store: Store, key: Key, job: Arc<Job>, result: Result<Arc<LoadedImage>, LoadError>) {
-    let app = job.app.lock().expect("image job").take();
-    if let Some(app) = app {
-        app.update(move || {
-            store.update(|entries| {
-                if let Some(entry) = entries
-                    .borrow_mut()
-                    .entries
-                    .iter_mut()
-                    .find(|entry| entry.key == key && Arc::ptr_eq(&entry.job, &job))
-                    && matches!(entry.status, ImageStatus::Loading)
-                {
-                    entry.status = match result {
-                        Ok(image) => ImageStatus::Ready(image),
-                        Err(_) => ImageStatus::Failed,
-                    };
-                }
-            });
-        });
-    }
+    });
 }
 
 #[cfg(test)]
 mod tests {
+    use super::super::ImageLimits;
     use super::*;
     use ink_rs::{Element, Text, component};
     use std::io::Cursor;
-    use std::sync::mpsc;
+    use std::sync::{Mutex, mpsc};
+    use std::time::Instant;
 
     struct Loader {
         results: Mutex<mpsc::Receiver<Result<Vec<u8>, LoadError>>>,

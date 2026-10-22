@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::atomic::AtomicBool;
-#[cfg(feature = "markdown-highlight")]
+#[cfg(any(feature = "markdown-highlight", feature = "markdown-image"))]
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -168,7 +168,10 @@ impl MarkdownSender {
 }
 
 #[derive(Clone)]
-#[cfg_attr(not(feature = "markdown-highlight"), allow(dead_code))]
+#[cfg_attr(
+    not(any(feature = "markdown-highlight", feature = "markdown-image")),
+    allow(dead_code)
+)]
 pub(crate) struct Wake {
     app: AppHandle,
     store: Store,
@@ -177,12 +180,12 @@ pub(crate) struct Wake {
 }
 
 impl Wake {
-    #[cfg(feature = "markdown-highlight")]
+    #[cfg(any(feature = "markdown-highlight", feature = "markdown-image"))]
     pub(crate) fn callback(self) -> Arc<dyn Fn() + Send + Sync> {
         Arc::new(move || self.notify())
     }
 
-    #[cfg(feature = "markdown-highlight")]
+    #[cfg(any(feature = "markdown-highlight", feature = "markdown-image"))]
     fn notify(&self) {
         if self.queued.swap(true, Ordering::AcqRel) {
             return;
@@ -224,10 +227,54 @@ pub fn use_markdown_stream(
     let model = store.get();
     let theme = use_theme::<MarkdownTheme>(cx);
     #[cfg(feature = "markdown-highlight")]
-    model.borrow_mut().stream.set_code_theme(theme.code_theme);
+    model
+        .borrow_mut()
+        .stream
+        .set_code_theme(theme.code_theme.clone());
     #[cfg(not(feature = "markdown-highlight"))]
     let _ = theme;
+    #[cfg(feature = "markdown-image")]
+    {
+        use super::MarkdownImages;
+        use ink_rs::{ColorLevel, GraphicsSupport};
+        let graphics = cx.use_graphics();
+        let level = cx.use_color_level();
+        let loaders = cx
+            .use_context::<crate::image::ImageLoaders>()
+            .unwrap_or_default();
+        let setting = match graphics.support {
+            GraphicsSupport::Probing => MarkdownImages::Probing,
+            GraphicsSupport::Kitty
+                if matches!(level, ColorLevel::TrueColor | ColorLevel::Ansi256) =>
+            {
+                MarkdownImages::Kitty {
+                    loaders,
+                    cell_pixels: graphics.cell_pixels,
+                    color_level: level,
+                }
+            }
+            _ => MarkdownImages::Alt,
+        };
+        model.borrow_mut().stream.images.theme = theme;
+        let generation = model.borrow().generation;
+        let app = cx.use_app();
+        cx.use_layout_effect((generation, setting.clone()), move || {
+            store.update(|model| {
+                let mut model = model.borrow_mut();
+                let wake = Wake {
+                    app,
+                    store,
+                    generation,
+                    queued: model.highlight_wake.clone(),
+                };
+                model.stream.set_images_with(setting, Some(wake));
+                model.deliver();
+            });
+        });
+    }
     let active = model.borrow().stream.is_revealing();
+    #[cfg(feature = "markdown-image")]
+    let active = active || model.borrow().stream.waiting_for_images();
     let clock = cx.use_animation(AnimationOptions {
         interval: Duration::from_millis(8),
         active,
@@ -290,10 +337,28 @@ fn tail(cx: &mut Scope, props: &MarkdownTail) -> Element {
     let theme = use_theme::<MarkdownTheme>(cx);
     let window = cx.use_window_size();
     let cache = cx.use_memo((), Rc::<RefCell<render::Cache>>::default);
-    props
-        .handle
-        .model
-        .borrow()
-        .stream
-        .view(&theme, &cache, usize::from(window.rows), props.settle)
+    #[cfg(feature = "markdown-image")]
+    let (node, columns) = super::images::use_columns(cx);
+    #[cfg(feature = "markdown-image")]
+    props.handle.model.borrow_mut().stream.set_columns(columns);
+    let body = props.handle.model.borrow().stream.view(
+        &theme,
+        &cache,
+        usize::from(window.rows),
+        props.settle,
+    );
+    #[cfg(feature = "markdown-image")]
+    {
+        use ink_rs::Styled;
+        ink_rs::View::new()
+            .node_ref(node)
+            .width(ink_rs::Percent(100.0))
+            .flex_direction(ink_rs::FlexDirection::Column)
+            .child(body)
+            .into()
+    }
+    #[cfg(not(feature = "markdown-image"))]
+    {
+        body
+    }
 }

@@ -8,14 +8,24 @@ use crate::ui::{Palette, use_theme};
 
 mod decode;
 mod hook;
+mod load;
 mod loaders;
 mod protocol;
 
+#[cfg(feature = "markdown-image")]
+pub(crate) use decode::rows_at_width;
 pub(crate) use decode::{CellSize, ImageLimits, size_in_cells};
-pub(crate) use hook::{ImageRequest, ImageStatus, use_images};
+pub(crate) use hook::use_images;
+pub(crate) use load::{ImageRequest, ImageStatus};
+#[cfg(feature = "markdown-image")]
+pub(crate) use load::{Job, start_load};
 #[cfg(feature = "image-http")]
 pub use loaders::HttpLoader;
+#[cfg(feature = "markdown-image")]
+pub(crate) use loaders::is_network;
 pub use loaders::{FileLoader, ImageLoader, ImageLoaders, LoadError};
+#[cfg(feature = "markdown-image")]
+pub(crate) use protocol::linked_placeholder_rows;
 pub(crate) use protocol::{ImagePlacement, LoadedImage, placeholder_rows, use_image_effect};
 
 /// An image displayed with kitty placeholders, or `[alt]` when unavailable.

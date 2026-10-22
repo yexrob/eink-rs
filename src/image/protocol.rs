@@ -108,6 +108,10 @@ pub(crate) struct ImagePlacement {
 
 /// Returns one styled text run per row, including one-row inline placements.
 pub(crate) fn placeholder_rows(placement: &ImagePlacement) -> Vec<Text> {
+    linked_placeholder_rows(placement, None)
+}
+
+pub(crate) fn linked_placeholder_rows(placement: &ImagePlacement, link: Option<&str>) -> Vec<Text> {
     DIACRITICS
         .iter()
         .take(placement.size.rows)
@@ -117,6 +121,10 @@ pub(crate) fn placeholder_rows(placement: &ImagePlacement) -> Vec<Text> {
                 .take(placement.size.columns)
                 .flat_map(|&column| ['\u{10eeee}', row, column])
                 .collect();
+            let text = match link {
+                Some(url) => format!("\x1b]8;;{url}\x1b\\{text}\x1b]8;;\x1b\\"),
+                None => text,
+            };
             Text::new(text).color(placement.image.id.color)
         })
         .collect()
