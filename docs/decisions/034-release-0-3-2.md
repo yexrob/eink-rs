@@ -20,6 +20,7 @@ main 上 0.3.1 之后没有发版的改动还有 [032](032-animation-video.md) �
   - 版本号 0.3.2：兼容的新增和修复，同 [031](031-release-0-3-1.md) 升第三位。
   - 只发 eink-rs。`macros/` 没有改动，eink-rs-macros 留在 0.2.0；依赖的 ink-rs 留在 0.1.7。
   - 顺序同 [031](031-release-0-3-1.md)：本地全量、推送 main、等 CI 通过、打 `v0.3.2` 标签、`cargo publish -p eink-rs`。不建 GitHub Release。CI 失败时修正单独提交，标签打在 CI 通过的提交上。
+  - 推送 `3f4b27c` 后 CI run 39907784271 的 Windows job 失败：ffmpeg 参数的单元测试把本地来源写成 `file:videos/-x`，Windows 上 `Path::join` 拼出 `file:videos\-x`。代码按平台拼路径，ffmpeg 在 Windows 上接受反斜杠；测试的期望值改用 `PathBuf::join` 拼。修正单独一个提交。`cargo test` 在失败的测试二进制处停止，Windows 上的集成测试这次没有跑到，看修正后的 CI。
   - 视频还有两件事等用户定（帧尺寸上限要不要做成示例参数或改默认值，从零开始时去掉 `-ss`），不阻塞这次发版。
 
 ## 方案

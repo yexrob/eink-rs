@@ -11,6 +11,11 @@ fn request() -> FrameRequest {
     }
 }
 
+/// The input of a local source under the decoder's base, with the platform's separator.
+fn local_input(source: &str) -> String {
+    format!("file:{}", PathBuf::from("videos").join(source).display())
+}
+
 fn args(command: Command) -> Vec<String> {
     command
         .get_args()
@@ -37,7 +42,7 @@ fn commands_constrain_protocols_and_keep_sources_as_inputs() {
             "-ss",
             "0.500000000",
             "-i",
-            "file:videos/-x",
+            local_input("-x").as_str(),
             "-map",
             "0:v:0",
             "-an",
@@ -54,7 +59,7 @@ fn commands_constrain_protocols_and_keep_sources_as_inputs() {
     );
     for source in ["concat:one|two", "subfile:video", "list.m3u8"] {
         let command = args(decoder.frames_command(source, &request()));
-        assert_eq!(command[8], format!("file:videos/{source}"));
+        assert_eq!(command[8], local_input(source));
     }
     for source in ["http://example.org/v.mp4", "https://example.org/v.mp4"] {
         let command = args(decoder.frames_command(source, &request()));
@@ -85,7 +90,7 @@ fn commands_constrain_protocols_and_keep_sources_as_inputs() {
             "-protocol_whitelist",
             "file",
             "-i",
-            "file:videos/-x",
+            local_input("-x").as_str(),
         ]
     );
     let probe = args(decoder.probe_command("HTTPS://example.org/v.mp4"));
