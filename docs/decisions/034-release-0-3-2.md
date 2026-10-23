@@ -1,8 +1,8 @@
 # 发布 0.3.2：动图、视频和 Select 行标记的修复
 
 - 日期：2026-10-23
-- 状态：实施中
-- 提交：无
+- 状态：已实施
+- 提交：`3f4b27c` chore: release 0.3.2；`e414045` test(video): build expected local inputs with the platform separator；`cc0f2af` fix(video): keep the paint tick until the clock advances
 - Brief：无，主 agent 自己做
 
 ## 背景
@@ -33,3 +33,12 @@ main 上 0.3.1 之后没有发版的改动还有 [032](032-animation-video.md) �
 3. 本地全量：fmt；clippy 的 `--workspace --all-features`、无 feature、`markdown`、`markdown-image`、`image`、`image-svg`、`video`；`--workspace --all-features` 和无 feature 的测试；`cargo test --features markdown --test markdown`；`cargo doc` 带 `-D warnings`；`cargo publish --dry-run`。
 4. 推送 main，等 CI，打 `v0.3.2` 标签并推送，`cargo publish -p eink-rs`。
 5. 补本记录的结果，告诉 bingo-refactor 会话版本号。
+
+## 结果
+
+- 提交顺序：本记录 `5606036`；`3f4b27c` 升版本号；`e414045` Windows 路径的测试修正；`cc0f2af` 播放器的修正。032 的提交和 033 的 `b43948b` 在本记录之前合入 main。
+- 本地全量（`cc0f2af`）：fmt；clippy 的 `--workspace --all-features` 和无 feature、`markdown`、`markdown-image`、`image`、`image-svg`、`video` 六组；`--workspace --all-features` 216 个测试通过，无 feature 的测试通过；`cargo doc` 带 `-D warnings` 通过；`cargo publish --dry-run` 通过。
+- 播放器的修正：修正前那个测试本地 40 次失败 2 次；修正后顺序跑 150 次、8 路并发跑 80 次，没有失败。
+- CI：run 39907784271（`3f4b27c`）Windows 失败；run 39908474304（`e414045`）ubuntu 和 Windows 失败，原因见决策一节；run 39910469905（`cc0f2af`）4 个 job 通过。
+- `v0.3.2` 标签打在 `cc0f2af` 并推送。`cargo publish -p eink-rs` 成功：eink-rs 0.3.2 依赖 ink-rs 0.1.7 和 eink-rs-macros 0.2.0。
+- 版本号发给了 bingo-refactor 会话。
