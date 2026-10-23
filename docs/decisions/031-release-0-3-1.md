@@ -1,8 +1,8 @@
 # 发布 0.3.1
 
 - 日期：2026-10-23
-- 状态：实施中
-- 提交：无
+- 状态：已实施
+- 提交：`04fb73b` chore: release 0.3.1；`e41b1ce` fix(image): allocate ids without the deprecated fetch_update
 - Brief：无，主 agent 自己做
 
 ## 背景
@@ -29,3 +29,11 @@
 3. 本地全量：fmt；clippy 的 `--workspace --all-features`、无 feature、`markdown`、`markdown-image`、`image`、`image-svg`；`--workspace --all-features` 和无 feature 的测试；`cargo test --features markdown --test markdown`；`cargo doc` 带 `-D warnings`；`cargo package -p eink-rs` 检查打包的文件和编译；`cargo publish --dry-run`。
 4. 推送 main，等 CI，打 `v0.3.1` 标签并推送，`cargo publish -p eink-rs`。
 5. 补本记录的结果，删图片的 worktree 和分支，告诉 bingo 会话。
+
+## 结果
+
+- 提交顺序：本记录 `97cf655`；`04fb73b` 升版本号；`e41b1ce` CI 的修正。023 的提交 `90ab7c0` 到 `25b11d8` 在本记录之前合入 main。
+- 本地全量：fmt；clippy 的六组；`--workspace --all-features` 197 个、`--workspace` 无 feature 175 个、`--features markdown --test markdown` 3 个测试通过；`cargo doc` 带 `-D warnings` 通过。第一次 `cargo package` 连 crates.io 超时失败；`cargo publish --dry-run` 打包 101 个文件，不含 `docs/`，验证编译通过。
+- main 推送到 `04fb73b` 后 CI run 39881069416 失败，原因见决策一节。修正之后本地跑了 fmt、clippy 的 `--workspace --all-features` 和 `image` 两组、图片的两个集成测试和单元测试；main 推送到 `e41b1ce`，CI run 39881414872 的 4 个 job 通过。
+- `v0.3.1` 标签打在 `e41b1ce` 并推送。`cargo publish` 经本机的代理连 crates.io 超时，去掉代理的环境变量后发布成功：eink-rs 0.3.1 依赖 ink-rs 0.1.7 和 eink-rs-macros 0.2.0。
+- 图片的 worktree 和 `wt/image` 分支删除了。
