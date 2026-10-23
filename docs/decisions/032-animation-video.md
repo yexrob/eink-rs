@@ -132,3 +132,4 @@
   - 加载中调 `play` 或 `pause` 不生效，加载完成后按 `autoplay`。
 - tmux 会话没有接终端，示例显示 `Failed: video needs kitty graphics`，`q` 退出正常。画面请用户在 Ghostty 和 herdr 里看。
 - fmt，同一组 feature 的 clippy，全量测试（215 个），默认构建通过。`docs/design.md` 的 video 一节补了播放器。
+- 迟到帧的修复：188549e。Big Buck Bunny 720p 的 10 秒片段：debug 版每秒上传约 10 帧，10 秒播完；release 版 10 秒上传 240 帧，每秒 24 帧。新加的测试段在去掉修复时失败。fmt，`video` 和全部 feature 的 clippy，全量测试（215 个）通过。`docs/design.md` 的帧队列补了跳帧。
