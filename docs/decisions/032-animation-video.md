@@ -2,7 +2,7 @@
 
 - 日期：2026-10-23
 - 状态：实施中
-- 提交：无
+- 提交：c1771f3、4809b59、834be80
 - Brief：[animation-terminal](briefs/animation-terminal.md)、[animation-decoding](briefs/animation-decoding.md)、[animation-image](briefs/animation-image.md)、[video-decoder](briefs/video-decoder.md)、[video-component](briefs/video-component.md)
 
 ## 背景
@@ -121,3 +121,12 @@
   - 读帧去掉 `try_reserve_exact`：帧的字节数在 `FrameRequest` 上校验过。
   - 限制：循环在最后一帧的间隔过完后启动新进程，接缝处有 70 到 150 ms 的停顿；解码器卡在 `next` 里时，seek 和丢弃要等它返回。
 - fmt，无 feature、`video`、`image`、`markdown`、`markdown-image`、`image-svg` 和全部 feature 的 clippy，全量测试（212 个）通过。`docs/design.md` 补了动图和 `video` 一节。
+- 第二步的组件这一半：834be80。review 没有改代码。worker 在 brief 之外的处理：
+  - 暂停时跳转或末帧上传之后，时钟保留一拍，让空闲 id 里的帧换上屏：帧在取到之后的下一个周期显示，时钟停了就换不上去。
+  - 内部的位置可以越过元数据的时长，公开的位置限制在时长以内：最后一帧的间隔可以超出元数据的时长。
+  - 两个 id 的类型叫 `ImagePair`，按尺寸和颜色画占位符的函数叫 `colored_placeholder_rows`。
+- 组件这一半的限制：
+  - 取帧在 layout effect 里，状态更新让调用 hook 的组件每个时钟周期渲染两轮。子树小时代价可以接受；省掉一轮要在渲染里推进位置，留到有需要时。
+  - 加载中调 `play` 或 `pause` 不生效，加载完成后按 `autoplay`。
+- tmux 会话没有接终端，示例显示 `Failed: video needs kitty graphics`，`q` 退出正常。画面请用户在 Ghostty 和 herdr 里看。
+- fmt，同一组 feature 的 clippy，全量测试（215 个），默认构建通过。`docs/design.md` 的 video 一节补了播放器。

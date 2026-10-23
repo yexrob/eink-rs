@@ -7,14 +7,14 @@ eink-rs 建在 [ink-rs](https://github.com/yexrob/ink-rs) 上，有六部分：
 - `router`：参照 React Router 的应用内路由，路由表是 enum，可以从目录生成。
 - `markdown`：Markdown 渲染和模型回复的流式显示，定稿的段进 `Static`，尾部重绘。
 - `image`：用 kitty 的 Unicode 占位符显示图片和动图的 `Image` 组件和加载器，Markdown 里的图片用它。
-- `video`：视频的解码器和帧队列，`Video` 组件建在它上面。
+- `video`：`Video` 组件和播放器句柄，建在视频的解码器和帧队列上。
 
 设计怎么来的见 [decisions/](decisions/README.md)。
 
 ## 结构
 
 - workspace 的根 package 是 `eink-rs`。proc macro 在 Rust 里要独立成 crate：成员 `macros/`（`eink-rs-macros`）放 `Commands`、`Routes` 两个 derive 和 `routes!`。成员 `examples/file-routes/` 是目录路由的示例包，`examples/ship/` 是组合 ui、cli 和 router 的部署控制台示例包，`examples/quill/` 是内联渲染的编码助手示例包，都不发布。
-- `ui` 只依赖 ink-rs，`Code` 在开 `highlight` 时着色。feature 默认都不开：`cli` 加 clap 和 derive，`router` 加路由和它的宏，`completion` 加 clap_complete，`tokio` 加异步入口并开 ink-rs 的 `tokio`；后两个都带上 `cli`。`markdown` 加 pulldown-cmark，`highlight` 加 syntect 和 two-face，`markdown-highlight` 合并 `markdown` 和 `highlight`。`image` 加 `image` crate 的解码和 `Image` 组件，`image-http` 加 ureq 的网络加载器，`image-svg` 加 resvg，后两个带上 `image`；`markdown-image` 合并 `markdown` 和 `image`。`video` 加视频的解码器，带上 `image`。只用组件的项目不编译 clap。
+- `ui` 只依赖 ink-rs，`Code` 在开 `highlight` 时着色。feature 默认都不开：`cli` 加 clap 和 derive，`router` 加路由和它的宏，`completion` 加 clap_complete，`tokio` 加异步入口并开 ink-rs 的 `tokio`；后两个都带上 `cli`。`markdown` 加 pulldown-cmark，`highlight` 加 syntect 和 two-face，`markdown-highlight` 合并 `markdown` 和 `highlight`。`image` 加 `image` crate 的解码和 `Image` 组件，`image-http` 加 ureq 的网络加载器，`image-svg` 加 resvg，后两个带上 `image`；`markdown-image` 合并 `markdown` 和 `image`。`video` 加视频的解码器和 `Video` 组件，带上 `image`。只用组件的项目不编译 clap。
 - 依赖 crates.io 上的 ink-rs，关掉它的默认 feature，开 `macros`。缺的通用原语加进 ink-rs，不在这里绕过。
 
 ## ui
@@ -267,7 +267,7 @@ pulldown-cmark 0.13 解析，开表格、删除线、任务列表、脚注和 GF
 - 图像 id 24 位，进程启动时取随机的起点，之后递增，不回收：滚动区里留下的占位符指向它。256 色下 id 是 8 位，有自己的计数器，跳过 ink-rs 探测用的 31。占位符的前景色编码 id：真彩用 `Rgb`，256 色用 `Ansi256`。
 - 占位符每行一个 `Text`，每格是 U+10EEEE 加行号和列号两个变音符号。行内图片带链接时，占位符包在 OSC 8 里。
 - `use_image_effect` 在提交后发送：图像数据（`a=t,t=d,f=100`，base64 每块 4096 字节）每张一次；虚拟放置（`a=p,U=1,p=1`）在行列变化时发，同号的放置替换旧的尺寸。发送经 ink-rs 的 `OutputWriter::write_passthrough`，在 tmux 里包成 passthrough。`Static` 里的条目写出后运行 effect，占位符早于数据到达终端，kitty 和 Ghostty 在数据到达后绘制。
-- 动图占两个 id，轮流装帧：渲染画其中一个 id 的颜色，下一帧传进空闲的那个。空闲 id 里的帧到了时间，渲染换成这个 id，没到时间保持在屏的 id。提交后的 effect 把该显示的帧的下一帧连同虚拟放置传进空闲的 id；重传一个 id 会删掉它的放置，effect 不写在屏的 id。换色的那一帧在上传之前到达终端：`write_passthrough` 的字节在包含之前状态改动的那一帧之后发出。第二个 id 分配不到时显示第一帧。
+- 动图占两个 id，轮流装帧：渲染画其中一个 id 的颜色，下一帧传进空闲的那个。空闲 id 里的帧到了时间，渲染换成这个 id，没到时间保持在屏的 id。提交后的 effect 把该显示的帧的下一帧连同虚拟放置传进空闲的 id；重传一个 id 会删掉它的放置，effect 不写在屏的 id。换色的那一帧在上传之前到达终端：`write_passthrough` 的字节在包含之前状态改动的那一帧之后发出。第二个 id 分配不到时显示第一帧。两个 id 的部分是 crate 内部的 `ImagePair`：id 对、画着的槽、带放置的上传、尺寸变化时重发放置、删除空闲 id；视频共用它，选槽的规则留在动图和视频自己的代码里。
 - 动图的时钟：加载图片的组件用一个 `use_animation` 推进开始播放的动图，间隔不超过播放中任何一帧的延迟，不低于 20 ms。第一次发送之后开始计时，没有放置的图片（表格里的）不计时。有限循环播完后停在最后一帧，之后不发送，时钟停止。
 - 组件卸载时，动图空闲 id 的数据被删除（`a=d,d=I`），在屏的 id 留给终端里的占位符。静图不删除，终端按配额回收旧图。
 
@@ -299,7 +299,7 @@ pulldown-cmark 0.13 解析，开表格、删除线、任务列表、脚注和 GF
 
 ## video
 
-`video` 带上 `image`，PNG 编码用它。这一版有解码器和帧队列，`Video` 组件和播放器句柄是 [032](decisions/032-animation-video.md) 的下一步。
+`video` 带上 `image`，PNG 编码用它，复用图片的 id 分配、占位符和两个 id 的轮换。讨论见 [032](decisions/032-animation-video.md)。
 
 ### 解码器
 
@@ -315,7 +315,20 @@ pulldown-cmark 0.13 解析，开表格、删除线、任务列表、脚注和 GF
 - `seek` 清空队列，开一个新的流，代号加一，旧代号的帧和错误不交出。循环的队列在最后一帧的间隔过完后从零开一个新代号，调用方看到代号变化后把时钟设到 `start`。从零开始的空流报错，不循环启动进程；循环中 seek 到最后一帧之后时回到开头。
 - 丢弃队列时线程收到停止的通知，释放迭代器。线程不被 join，卡在 `next` 里的自定义解码器不阻塞 UI 线程。
 
+### 播放器
+
+- `use_video_player(cx, VideoOptions)` 持有模型，返回 `VideoPlayer` 句柄：`play`、`pause`、`seek`，`status`、`position`、`duration`。`Video { player, alt }` 是视图。一个播放器对应一个 `Video`。
+- `VideoOptions`：`src`；`autoplay`，默认开；`looping`；`max_columns` 和 `max_rows`，规则和 `Image` 相同；`max_fps`，默认 24；`max_pixels`，默认 640×360。
+- 加载：探测中是 `Loading`；终端不支持 kitty 图形或少于 256 色时是 `Failed`。`info` 在工作线程上运行，经 `AppHandle::update` 回到 UI 线程，期限和图片相同（本地 5 秒、网络 10 秒）。超时、换源、卸载之后到达的结果被丢弃。
+- 尺寸：单元格用 `size_in_cells`。帧保持视频的宽高比，不超过放置的像素、视频本身和 `max_pixels`。帧率取 `max_fps` 和视频帧率里小的那个，视频帧率是 ffprobe 的 `avg_frame_rate` 向上取整。帧尺寸或帧率变化时，在当前位置开新的帧队列；`looping` 变化时调 `set_looping`；换源时从加载开始。
+- 时钟：一个 `use_animation`，间隔是帧间隔，在播放、加载、等新流的第一帧时运行。每条新流（开始、跳转、循环、新的帧队列）的位置停在起点，第一帧到达后开始走。暂停时位置不动，帧队列阻塞在 3 帧。播完停在最后一帧，状态是 `Ended`，`play` 从零开始；从 `Ended` 跳转得到 `Paused`。
+- 取帧和上传：hook 在 layout effect 里按位置取帧，帧带流号和一个不重复的序号。layout effect 里的状态更新在绘制之前触发第二轮渲染，视图在这次提交的 effect 里把帧传进空闲 id；画着的 id 没有帧时传进画着的 id。视图画装着当前流最新一帧的 id，没有这样的 id 时保持画着的 id；跳转或循环之前传进去的帧不显示。帧在取到之后的下一个时钟周期显示，晚一个帧间隔。暂停时跳转之后，时钟保留一拍，让空闲 id 里的帧换上屏。
+- 代价：调用 hook 的组件在播放时每个时钟周期渲染两轮，时钟一轮，取帧后的状态更新一轮，它的子树在这两轮里重绘。播放器放在小组件里。
+- `Loading` 和 `Failed` 显示 `[alt]`，样式取 `ImageTheme`。卸载时删掉空闲 id 的数据。
+- 示例 `examples/video.rs`：`-- <src>` 播放文件或网址，`-- --pattern` 用示例里的测试图样解码器，给没装 ffmpeg 的机器用。空格播放和暂停，左右方向键跳 5 秒，`l` 切换循环，`q` 退出。
+
 ### 测试
 
-- 单元测试：ffmpeg 的参数（`file:` 前缀、白名单、`-rw_timeout`、名为 `-x` 的本地来源留在输入的位置）；ffprobe 输出的解析；槽的身份和空槽；缺失的程序和 stderr 的上限；帧队列的帧时间、3 帧上限、seek、在途的旧代号、循环、结束、迟到的帧和丢弃。
+- 单元测试：帧的尺寸和帧率；ffmpeg 的参数（`file:` 前缀、白名单、`-rw_timeout`、名为 `-x` 的本地来源留在输入的位置）；ffprobe 输出的解析，包括 `avg_frame_rate`；槽的身份和空槽；缺失的程序和 stderr 的上限；帧队列的帧时间、3 帧上限、seek、在途的旧代号、循环、结束、迟到的帧和丢弃。
+- `tests/video.rs` 的两个测试用测试解码器和回答 kitty 探测的终端：两个 id 的上传顺序、换色先于上传、暂停、暂停时跳转显示目标帧、旧流的帧不显示、结束、循环、从头播、卸载删除空闲 id、`info` 失败显示 `[alt]`。
 - 一个测试调真实的 ffmpeg：生成一秒 64×36 的 `testsrc2`，核对 `info`，从 0.5 秒以 32×18、10 fps 解出五帧。机器上没有 `ffmpeg` 或 `ffprobe` 时返回。
