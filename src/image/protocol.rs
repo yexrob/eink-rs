@@ -29,19 +29,13 @@ impl ImageId {
             .get_or_init(|| (RandomState::new().hash_one("eink image") % u64::from(COUNT)) as u32);
         let value = match level {
             ColorLevel::TrueColor => {
-                let offset = TRUE_COLOR
-                    .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |next| {
-                        (next < COUNT).then_some(next + 1)
-                    })
-                    .map_err(|_| LoadError::new("image ids exhausted"))?;
+                let offset = take(&TRUE_COLOR, COUNT)
+                    .ok_or_else(|| LoadError::new("image ids exhausted"))?;
                 256 + (start + offset) % COUNT
             }
             ColorLevel::Ansi256 => {
-                let offset = ANSI
-                    .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |next| {
-                        (next < 254).then_some(next + 1)
-                    })
-                    .map_err(|_| LoadError::new("indexed image ids exhausted"))?;
+                let offset = take(&ANSI, 254)
+                    .ok_or_else(|| LoadError::new("indexed image ids exhausted"))?;
                 let value = 1 + (start + offset) % 254;
                 // ink-rs reserves 31 for its graphics query.
                 if value >= 31 { value + 1 } else { value }
@@ -55,6 +49,18 @@ impl ImageId {
         };
         Ok(Self { value, color })
     }
+}
+
+/// Takes the counter's next value below `limit`, or `None` once all are taken.
+fn take(counter: &AtomicU32, limit: u32) -> Option<u32> {
+    let mut next = counter.load(Ordering::Relaxed);
+    while next < limit {
+        match counter.compare_exchange_weak(next, next + 1, Ordering::Relaxed, Ordering::Relaxed) {
+            Ok(taken) => return Some(taken),
+            Err(current) => next = current,
+        }
+    }
+    None
 }
 
 /// A loaded image shared by renderers and retained across placement changes.

@@ -18,6 +18,7 @@
   - 版本号 0.3.1：改动是兼容的新增，0.x 的版本里升第三位。
   - 只发 eink-rs。`macros/` 没有改动，eink-rs-macros 留在 0.2.0；依赖的 ink-rs 留在 0.1.7。
   - 顺序同 [030](030-release-0-3-0.md)：本地全量、推送 main、等 CI 通过、打 `v0.3.1` 标签、`cargo publish -p eink-rs`。不建 GitHub Release。
+  - 推送 `04fb73b` 后 CI run 39881069416 的三个测试 job 失败：CI 的 stable 是 1.99.1，把 `AtomicU32::fetch_update` 标为 deprecated（改名 `try_update`），clippy 带 `-D warnings` 报错；本机的 stable 是 1.96.0，没有这个警告。`try_update` 在 `rust-version` 1.88 上不存在，图像 id 的两个计数器改用 `compare_exchange_weak` 的循环，取上限以下的下一个值，用完时返回 `None`，和 `fetch_update` 的语义相同。修正单独一个提交，CI 通过后标签打在它上面，从它发布。
 
 ## 方案
 
