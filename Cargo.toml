@@ -31,6 +31,7 @@ markdown-image = ["markdown", "image"]
 image = ["dep:image"]
 image-http = ["image", "dep:ureq"]
 image-svg = ["image", "dep:resvg"]
+video = ["image"]
 
 [dependencies]
 clap = { version = "4", optional = true, features = ["derive"] }

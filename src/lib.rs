@@ -20,3 +20,5 @@ pub mod markdown;
 #[cfg(feature = "router")]
 pub mod router;
 pub mod ui;
+#[cfg(feature = "video")]
+pub mod video;

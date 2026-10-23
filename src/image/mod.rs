@@ -22,7 +22,7 @@ pub(crate) use load::{ImageRequest, ImageStatus};
 pub(crate) use load::{Job, start_load};
 #[cfg(feature = "image-http")]
 pub use loaders::HttpLoader;
-#[cfg(feature = "markdown-image")]
+#[cfg(any(feature = "markdown-image", feature = "video"))]
 pub(crate) use loaders::is_network;
 pub use loaders::{FileLoader, ImageLoader, ImageLoaders, LoadError};
 #[cfg(feature = "markdown-image")]
