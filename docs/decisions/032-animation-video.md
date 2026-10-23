@@ -93,3 +93,18 @@
    - 解码这一半，brief 见 [video-decoder](briefs/video-decoder.md)：一个 Codex worker，和第一步并行，用自己的 worktree。它不改 `src/image/` 和 `src/markdown/`，够得着现有的项需要的改动除外，在报告里列出。
    - 组件这一半：动图合入、用户看过之后，主 agent 补细节和 brief，派一个 Codex worker。
 4. 版本号和发版在两步合入后商定。
+
+## 结果
+
+- 第一步，动图：c1771f3。review 的改动：
+  - `LoadedImage` 分成静图和动图两种内容，去掉动图上空着的 PNG 和 `expect`。槽里记帧显示的时间，不记帧号，解码线程送来的视频帧走同一条路。
+  - worker 认为 ink-rs 在卸载时丢掉 cleanup 的写入，没做空闲 id 的删除。核对 ink-rs 0.1.7：`begin_unmount` 在应用退出时设 `unmounting`，组件卸载时不设。补上 `a=d,d=I`，测试改成卸掉组件，断言删除的是空闲 id。
+  - 解码合成一个循环：单帧、超过 1000 帧或 32 MiB 时返回 `None`，走静图的路。延迟用 `Duration::from(Delay)` 换算。
+  - tmux 会话没有接终端，探测拿不到 kitty 的回答，示例显示 `[alt]`。图形请用户在 Ghostty 和 herdr 里看，`Markdown` 组件用一个不入库的读文件示例看。
+- 第二步的解码这一半：4809b59。review 的改动：
+  - 去掉帧上的代号字段：seek 清空队列，队列里的帧属于当前代号。
+  - `VideoDecoders::decoder` 改成 crate 内部，公开的 API 和 `ImageLoaders` 对齐。
+  - 循环时 seek 到最后一帧之后，空的流按结束处理，回到开头；从零开始的空流报错。worker 的版本在这种情况下报错。
+  - 读帧去掉 `try_reserve_exact`：帧的字节数在 `FrameRequest` 上校验过。
+  - 限制：循环在最后一帧的间隔过完后启动新进程，接缝处有 70 到 150 ms 的停顿；解码器卡在 `next` 里时，seek 和丢弃要等它返回。
+- fmt，无 feature、`video`、`image`、`markdown`、`markdown-image`、`image-svg` 和全部 feature 的 clippy，全量测试（212 个）通过。`docs/design.md` 补了动图和 `video` 一节。
