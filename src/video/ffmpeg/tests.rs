@@ -62,7 +62,7 @@ fn commands_constrain_protocols_and_keep_sources_as_inputs() {
             &command[3..7],
             [
                 "-protocol_whitelist",
-                "http,https,tcp,tls,crypto",
+                "http,https,tcp,tls,crypto,httpproxy",
                 "-rw_timeout",
                 "10000000"
             ]
@@ -93,7 +93,7 @@ fn commands_constrain_protocols_and_keep_sources_as_inputs() {
         &probe[8..],
         [
             "-protocol_whitelist",
-            "http,https,tcp,tls,crypto",
+            "http,https,tcp,tls,crypto,httpproxy",
             "-rw_timeout",
             "10000000",
             "-i",

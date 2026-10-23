@@ -65,6 +65,7 @@
   - 状态：`Loading`、`Playing`、`Paused`、`Ended`、`Failed(LoadError)`。探测中是 `Loading`；终端不支持图形、槽空着、`info` 超时（本地 5 秒、网络 10 秒，和图片一致）、解码出错是 `Failed`。`Loading` 和 `Failed` 显示 `[alt]`，样式取 `ImageTheme`。播完停在最后一帧，`play` 从头播。
   - 示例 `examples/video.rs`：空格播放和暂停，左右方向键跳 5 秒，`l` 切换循环，`q` 退出，状态行显示位置和时长；`--pattern` 用示例里的测试图样解码器。
   - 去掉 `feed` 和 `decoder` 上的 `dead_code` 豁免。
+- 用户在设了代理的终端里播放网络视频，ffprobe 报「Protocol 'httpproxy' not on whitelist」：设了 `https_proxy` 时，ffmpeg 的 TLS 走 `httpproxy` 协议，经代理的 CONNECT 建隧道。Claude 定：网络来源的白名单加 `httpproxy`。来源限 `http://` 和 `https://` 开头，来源名选不到 `httpproxy`；它只在环境设了代理时出现在 TLS 下面。备选是在命令里清掉代理变量，设了代理的机器连不上外网。参数测试的白名单跟着改，不加新测试。
 
 ## 调研要点
 

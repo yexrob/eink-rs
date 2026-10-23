@@ -305,7 +305,7 @@ pulldown-cmark 0.13 解析，开表格、删除线、任务列表、脚注和 GF
 
 - `VideoDecoder` trait 的方法在工作线程上运行：`info` 读显示尺寸和时长，`frames` 按 `FrameRequest { start, width, height, fps }` 返回 RGB 帧的迭代器，第 n 帧的时间是 `start` 加 n 除以 `fps`。丢弃迭代器停止解码。
 - `VideoDecoders` 有 `local` 和 `network` 两个槽，选槽规则和 `ImageLoaders` 相同，按解码器的身份比较，经 `Scope::provide` 替换。没有提供时两个槽是 `FfmpegDecoder`，本地路径以当前目录为基准；应用提供 `network: None` 关掉网络视频。
-- `FfmpegDecoder` 调 `ffprobe` 和 `ffmpeg` 两个程序，不链接 ffmpeg 的库，程序路径可以换。本地来源写成 `file:<路径>`，配 `-protocol_whitelist file`：来源名不会变成选项，不能选别的协议。网络来源限 http(s)，白名单是 `http,https,tcp,tls,crypto`，`-rw_timeout` 10 秒，ffmpeg 按范围读取，不下载整个文件。
+- `FfmpegDecoder` 调 `ffprobe` 和 `ffmpeg` 两个程序，不链接 ffmpeg 的库，程序路径可以换。本地来源写成 `file:<路径>`，配 `-protocol_whitelist file`：来源名不会变成选项，不能选别的协议。网络来源限 http(s)，白名单是 `http,https,tcp,tls,crypto,httpproxy`（设了代理时 TLS 经 `httpproxy` 走隧道），`-rw_timeout` 10 秒，ffmpeg 按范围读取，不下载整个文件。
 - 解码命令是 `-ss <start> -i <input> -map 0:v:0 -an -sn -dn -vf fps=<fps>,scale=<w>:<h> -pix_fmt rgb24 -f rawvideo pipe:1`，从 stdout 按整帧读。旋转 ±90、270 度时交换宽高，ffmpeg 输出转过的帧。stderr 在自己的线程里读完，保留末尾 16 KiB，非零退出的错误带上它；程序缺失时错误里写程序名。迭代器丢弃时子进程被杀掉并回收。
 
 ### 帧队列

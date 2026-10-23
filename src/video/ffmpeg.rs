@@ -43,7 +43,7 @@ impl FfmpegDecoder {
         if is_network(src) {
             command.args([
                 "-protocol_whitelist",
-                "http,https,tcp,tls,crypto",
+                "http,https,tcp,tls,crypto,httpproxy",
                 "-rw_timeout",
                 "10000000",
             ]);
