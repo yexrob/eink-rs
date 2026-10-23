@@ -16,13 +16,13 @@ mod diacritics;
 pub(super) use diacritics::DIACRITICS;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct ImageId {
+pub(crate) struct ImageId {
     value: u32,
-    color: Color,
+    pub color: Color,
 }
 
 impl ImageId {
-    fn allocate(level: ColorLevel) -> Result<Self, LoadError> {
+    pub(crate) fn allocate(level: ColorLevel) -> Result<Self, LoadError> {
         static START: OnceLock<u32> = OnceLock::new();
         static TRUE_COLOR: AtomicU32 = AtomicU32::new(0);
         static ANSI: AtomicU32 = AtomicU32::new(0);
@@ -86,14 +86,12 @@ struct Transmission {
 
 /// Two ids that take turns: the render draws one, and the next frame goes into the other.
 struct Playback {
-    back: ImageId,
+    pair: ImagePair,
     /// Time since the first send, advanced by the clock of the component that loaded it.
     time: Duration,
     started: bool,
-    drawn: usize,
     /// When the frame in each slot shows.
     shows: [Option<Duration>; 2],
-    sizes: [Option<CellSize>; 2],
 }
 
 impl LoadedImage {
@@ -101,7 +99,7 @@ impl LoadedImage {
         let id = ImageId::allocate(level)?;
         let content = match image.animation {
             Some(animation) => match ImageId::allocate(level) {
-                Ok(back) => Content::Animated(animation, Mutex::new(Playback::new(back))),
+                Ok(back) => Content::Animated(animation, Mutex::new(Playback::new(id, back))),
                 // Without a second id the first frame shows as a still image.
                 Err(_) => Content::still(animation.frames.into_iter().next().expect("frame").png),
             },
@@ -122,7 +120,7 @@ impl LoadedImage {
                 let playback = playback.lock().expect("image playback");
                 let slot = playback.due_slot();
                 let due = animation.position(playback.time);
-                (playback.id(self.id, slot), slot, Some(due))
+                (playback.pair.id(slot), slot, Some(due))
             }
         };
         ImagePlacement {
@@ -156,10 +154,11 @@ impl LoadedImage {
                 let mut playback = playback.lock().expect("image playback");
                 let starting = !playback.started;
                 playback.started = true;
-                playback.drawn = placement.slot;
+                playback.pair.drawn = placement.slot;
                 if playback.shows[placement.slot].is_none() {
                     let png = &animation.frames[0].png;
-                    playback.upload(out, self.id, placement.slot, Duration::ZERO, png, size);
+                    playback.pair.upload(out, placement.slot, png, size);
+                    playback.shows[placement.slot] = Some(Duration::ZERO);
                 }
                 // Retransmitting an id deletes its placements, so frames go into the idle id.
                 let next = animation.following(placement.due.expect("animation position"));
@@ -168,14 +167,10 @@ impl LoadedImage {
                     && playback.shows[idle] != Some(next.at)
                 {
                     let png = &animation.frames[next.frame].png;
-                    playback.upload(out, self.id, idle, next.at, png, size);
+                    playback.pair.upload(out, idle, png, size);
+                    playback.shows[idle] = Some(next.at);
                 }
-                for slot in 0..2 {
-                    if playback.shows[slot].is_some() && playback.sizes[slot] != Some(size) {
-                        send_placement(out, playback.id(self.id, slot), size);
-                        playback.sizes[slot] = Some(size);
-                    }
-                }
+                playback.pair.resize(out, size);
                 starting
             }
         }
@@ -186,13 +181,7 @@ impl LoadedImage {
     fn delete_idle(&self, out: OutputWriter) {
         if let Content::Animated(_, playback) = &self.content {
             let playback = playback.lock().expect("image playback");
-            let idle = 1 - playback.drawn;
-            if playback.shows[idle].is_some() {
-                out.write_passthrough(format!(
-                    "\x1b_Ga=d,d=I,i={},q=2\x1b\\",
-                    playback.id(self.id, idle).value
-                ));
-            }
+            playback.pair.delete_idle(out);
         }
     }
 }
@@ -207,46 +196,73 @@ impl Content {
 }
 
 impl Playback {
-    fn new(back: ImageId) -> Self {
+    fn new(front: ImageId, back: ImageId) -> Self {
         Self {
-            back,
+            pair: ImagePair::new(front, back),
             time: Duration::ZERO,
             started: false,
-            drawn: 0,
             shows: [None, None],
-            sizes: [None, None],
         }
-    }
-
-    fn id(&self, front: ImageId, slot: usize) -> ImageId {
-        if slot == 0 { front } else { self.back }
     }
 
     /// The idle slot once its frame is due and newer than the drawn one, else the drawn slot.
     fn due_slot(&self) -> usize {
-        let idle = 1 - self.drawn;
-        if self.shows[idle].is_some_and(|at| at <= self.time && Some(at) > self.shows[self.drawn]) {
+        let idle = 1 - self.pair.drawn;
+        if self.shows[idle]
+            .is_some_and(|at| at <= self.time && Some(at) > self.shows[self.pair.drawn])
+        {
             idle
         } else {
-            self.drawn
+            self.pair.drawn
+        }
+    }
+}
+
+/// The transport shared by animations and video; each caller chooses the drawn slot.
+pub(crate) struct ImagePair {
+    ids: [ImageId; 2],
+    pub drawn: usize,
+    sizes: [Option<CellSize>; 2],
+}
+
+impl ImagePair {
+    pub fn new(front: ImageId, back: ImageId) -> Self {
+        Self {
+            ids: [front, back],
+            drawn: 0,
+            sizes: [None, None],
         }
     }
 
-    // The caller supplies the encoded frame, so frames from a decoder fit the same path.
-    fn upload(
-        &mut self,
-        out: OutputWriter,
-        front: ImageId,
-        slot: usize,
-        shows: Duration,
-        png: &[u8],
-        size: CellSize,
-    ) {
-        let id = self.id(front, slot);
+    pub fn id(&self, slot: usize) -> ImageId {
+        self.ids[slot]
+    }
+
+    pub fn occupied(&self, slot: usize) -> bool {
+        self.sizes[slot].is_some()
+    }
+
+    pub fn upload(&mut self, out: OutputWriter, slot: usize, png: &[u8], size: CellSize) {
+        let id = self.id(slot);
         transmit(png, id.value, |command| out.write_passthrough(command));
         send_placement(out, id, size);
-        self.shows[slot] = Some(shows);
         self.sizes[slot] = Some(size);
+    }
+
+    pub fn resize(&mut self, out: OutputWriter, size: CellSize) {
+        for slot in 0..2 {
+            if self.occupied(slot) && self.sizes[slot] != Some(size) {
+                send_placement(out, self.id(slot), size);
+                self.sizes[slot] = Some(size);
+            }
+        }
+    }
+
+    pub fn delete_idle(&self, out: OutputWriter) {
+        let idle = 1 - self.drawn;
+        if self.occupied(idle) {
+            out.write_passthrough(format!("\x1b_Ga=d,d=I,i={},q=2\x1b\\", self.id(idle).value));
+        }
     }
 }
 
@@ -275,7 +291,8 @@ pub(super) fn use_playback(cx: &mut Scope, statuses: &[super::ImageStatus]) {
             let playback = playback.lock().expect("image playback");
             let position = animation.position(playback.time);
             // A finished animation that shows its last frame needs no clock.
-            let finished = position.ended && playback.shows[playback.drawn] == Some(position.at);
+            let finished =
+                position.ended && playback.shows[playback.pair.drawn] == Some(position.at);
             if !playback.started || finished {
                 return None;
             }
@@ -319,20 +336,28 @@ pub(crate) fn placeholder_rows(placement: &ImagePlacement) -> Vec<Text> {
 }
 
 pub(crate) fn linked_placeholder_rows(placement: &ImagePlacement, link: Option<&str>) -> Vec<Text> {
+    colored_placeholder_rows(placement.size, placement.id.color, link)
+}
+
+pub(crate) fn colored_placeholder_rows(
+    size: CellSize,
+    color: Color,
+    link: Option<&str>,
+) -> Vec<Text> {
     DIACRITICS
         .iter()
-        .take(placement.size.rows)
+        .take(size.rows)
         .map(|&row| {
             let text: String = DIACRITICS
                 .iter()
-                .take(placement.size.columns)
+                .take(size.columns)
                 .flat_map(|&column| ['\u{10eeee}', row, column])
                 .collect();
             let text = match link {
                 Some(url) => format!("\x1b]8;;{url}\x1b\\{text}\x1b]8;;\x1b\\"),
                 None => text,
             };
-            Text::new(text).color(placement.id.color)
+            Text::new(text).color(color)
         })
         .collect()
 }

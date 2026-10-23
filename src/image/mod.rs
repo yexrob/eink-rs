@@ -25,6 +25,10 @@ pub use loaders::HttpLoader;
 #[cfg(any(feature = "markdown-image", feature = "video"))]
 pub(crate) use loaders::is_network;
 pub use loaders::{FileLoader, ImageLoader, ImageLoaders, LoadError};
+#[cfg(feature = "video")]
+pub(crate) use loaders::{LOCAL_TIMEOUT, NETWORK_TIMEOUT};
+#[cfg(feature = "video")]
+pub(crate) use protocol::{ImageId, ImagePair, colored_placeholder_rows};
 #[cfg(feature = "markdown-image")]
 pub(crate) use protocol::{ImagePlacement, linked_placeholder_rows};
 pub(crate) use protocol::{LoadedImage, placeholder_rows, use_image_effect};

@@ -82,3 +82,7 @@ required-features = ["highlight"]
 [[example]]
 name = "image"
 required-features = ["image"]
+
+[[example]]
+name = "video"
+required-features = ["video"]

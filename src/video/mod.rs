@@ -1,14 +1,17 @@
-//! Video decoders selected by source kind, with ffmpeg as the default.
+//! Silent video playback with a player handle and source-selected decoders.
 
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
 use crate::image::{LoadError, is_network};
 
-// The player component will consume this crate-private feed in the next step.
-#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) mod feed;
 mod ffmpeg;
+mod player;
+mod view;
+
+pub use player::{VideoOptions, VideoPlayer, VideoStatus, use_video_player};
+pub use view::Video;
 
 pub use ffmpeg::FfmpegDecoder;
 
@@ -21,6 +24,8 @@ pub struct VideoInfo {
     pub height: u32,
     /// The duration, or `None` when the source does not report one.
     pub duration: Option<Duration>,
+    /// The average frame rate rounded up, or `None` when unknown.
+    pub fps: Option<u32>,
 }
 
 /// Frames wanted from a decoder.
@@ -78,8 +83,6 @@ pub struct VideoDecoders {
 
 impl VideoDecoders {
     /// Selects the source's decoder, or reports that its slot is disabled.
-    // The player component will call this in the next step.
-    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn decoder(&self, src: &str) -> Result<Arc<dyn VideoDecoder>, LoadError> {
         let slot = if is_network(src) {
             &self.network

@@ -6,8 +6,8 @@ use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
 pub(super) const MAX_BYTES: usize = 20 * 1024 * 1024;
-pub(super) const LOCAL_TIMEOUT: Duration = Duration::from_secs(5);
-pub(super) const NETWORK_TIMEOUT: Duration = Duration::from_secs(10);
+pub(crate) const LOCAL_TIMEOUT: Duration = Duration::from_secs(5);
+pub(crate) const NETWORK_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// An image could not be loaded, decoded, or prepared for display.
 #[derive(Clone, Debug, PartialEq, Eq)]

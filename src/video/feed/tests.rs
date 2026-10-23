@@ -44,6 +44,7 @@ impl VideoDecoder for TestDecoder {
             width: 2,
             height: 1,
             duration: None,
+            fps: None,
         })
     }
 

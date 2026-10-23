@@ -79,7 +79,7 @@ fn commands_constrain_protocols_and_keep_sources_as_inputs() {
             "-select_streams",
             "v:0",
             "-show_entries",
-            "stream=width,height:stream_tags=rotate:stream_side_data=rotation:format=duration",
+            "stream=width,height,avg_frame_rate:stream_tags=rotate:stream_side_data=rotation:format=duration",
             "-of",
             "default=noprint_wrappers=1",
             "-protocol_whitelist",
@@ -105,12 +105,19 @@ fn commands_constrain_protocols_and_keep_sources_as_inputs() {
 #[test]
 fn probe_parses_dimensions_rotation_and_unknown_duration() {
     assert_eq!(
-        parse_info("width=64\nheight=36\nduration=1.500000\n").unwrap(),
+        parse_info("width=64\nheight=36\navg_frame_rate=30000/1001\nduration=1.500000\n").unwrap(),
         VideoInfo {
             width: 64,
             height: 36,
             duration: Some(Duration::from_millis(1500)),
+            fps: Some(30),
         }
+    );
+    assert_eq!(
+        parse_info("width=64\nheight=36\navg_frame_rate=0/0")
+            .unwrap()
+            .fps,
+        None
     );
     for rotation in [
         "rotation=90",

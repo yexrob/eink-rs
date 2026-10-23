@@ -66,7 +66,7 @@ impl FfmpegDecoder {
             "-select_streams",
             "v:0",
             "-show_entries",
-            "stream=width,height:stream_tags=rotate:stream_side_data=rotation:format=duration",
+            "stream=width,height,avg_frame_rate:stream_tags=rotate:stream_side_data=rotation:format=duration",
             "-of",
             "default=noprint_wrappers=1",
         ]);
@@ -128,6 +128,7 @@ fn parse_info(output: &str) -> Result<VideoInfo, LoadError> {
     let mut height = None;
     let mut rotation = 0_i32;
     let mut duration = None;
+    let mut fps = None;
     for (key, value) in output.lines().filter_map(|line| line.split_once('=')) {
         match key {
             "width" => width = value.parse::<u32>().ok().filter(|value| *value > 0),
@@ -136,6 +137,16 @@ fn parse_info(output: &str) -> Result<VideoInfo, LoadError> {
                 rotation = value
                     .parse()
                     .map_err(|_| LoadError::new("invalid video rotation"))?;
+            }
+            "avg_frame_rate" => {
+                fps = value.split_once('/').and_then(|(numerator, denominator)| {
+                    let numerator = numerator.parse::<u64>().ok()?;
+                    let denominator = denominator.parse::<u64>().ok()?;
+                    if numerator == 0 || denominator == 0 {
+                        return None;
+                    }
+                    u32::try_from(numerator.div_ceil(denominator)).ok()
+                });
             }
             "duration" if value != "N/A" => {
                 duration = Some(
@@ -159,6 +170,7 @@ fn parse_info(output: &str) -> Result<VideoInfo, LoadError> {
         width,
         height,
         duration,
+        fps,
     })
 }
 
