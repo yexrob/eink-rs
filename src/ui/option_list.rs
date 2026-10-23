@@ -201,13 +201,19 @@ pub(super) fn render<T>(
                     let row = View::new()
                         .gap(theme.row_gap)
                         .padding_left(if focused { 0 } else { theme.unfocused_indent })
-                        .child(focused.then(|| Text::new(theme.pointer).color(theme.focus_color)))
+                        .child(
+                            focused
+                                .then(|| marker(Text::new(theme.pointer).color(theme.focus_color))),
+                        )
                         .child(
                             (number_hotkeys && number <= 9)
-                                .then(|| Text::new(format!("{number}.")).color(color)),
+                                .then(|| marker(Text::new(format!("{number}.")).color(color))),
                         )
                         .child(label)
-                        .child(selected.then(|| Text::new(theme.tick).color(theme.selected_color)));
+                        .child(
+                            selected
+                                .then(|| marker(Text::new(theme.tick).color(theme.selected_color))),
+                        );
                     View::new()
                         .flex_direction(FlexDirection::Column)
                         .child(row)
@@ -219,4 +225,10 @@ pub(super) fn render<T>(
                 }),
         )
         .into()
+}
+
+/// Keeps a marker at its width so a wrapping label takes all the shrink: a
+/// shrunk marker ends at a fraction, and the label's floored origin eats the gap.
+fn marker(text: Text) -> View {
+    View::new().flex_shrink(0.0).child(text)
 }

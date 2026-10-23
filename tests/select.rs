@@ -3,7 +3,10 @@ mod support;
 use std::{cell::RefCell, rc::Rc};
 
 use eink_rs::ui::{Select, SelectOption};
-use ink_rs::{Callback, Color, FlexDirection, Styled, Text, View, testing::render};
+use ink_rs::{
+    Callback, Color, ColorLevel, FlexDirection, RenderOptions, Styled, Text, View,
+    testing::{render, render_with},
+};
 
 const DOWN: &str = "\x1b[B";
 const UP: &str = "\x1b[A";
@@ -164,6 +167,28 @@ fn selected_option_by_default() {
             .default_value(Some("green")),
     );
     assert_eq!(app.last_frame(), expected(0..5, Some(0), &[1]));
+}
+
+#[test]
+fn row_markers_keep_their_gaps_beside_wrapped_labels() {
+    let app = render_with(
+        Select::default()
+            .options(vec![
+                SelectOption::new("Allow and keep Write(/a/very/long/path/to/a/file.txt)", 1),
+                SelectOption::new("Deny and tell Claude what to do differently", 2),
+            ])
+            .number_hotkeys(true)
+            .default_value(Some(1)),
+        RenderOptions {
+            columns: 30,
+            color_level: ColorLevel::None,
+        },
+    );
+    // Ink 8.0.0 renders the same rows with each marker in a `flexShrink: 0` Box.
+    assert_eq!(
+        app.last_frame(),
+        "❯ 1. Allow and keep          ✔\n     Write(/a/very/long/path\n     /to/a/file.txt)\n  2. Deny and tell Claude what\n      to do differently"
+    );
 }
 
 #[test]
