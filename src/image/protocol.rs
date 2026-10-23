@@ -1,11 +1,15 @@
+use std::cell::RefCell;
 use std::collections::hash_map::RandomState;
 use std::hash::BuildHasher;
+use std::rc::Rc;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
+use std::time::Duration;
 
-use ink_rs::{Color, ColorLevel, OutputWriter, Scope, Text};
+use ink_rs::{AnimationOptions, Color, ColorLevel, OutputWriter, Scope, Text};
 
 use super::decode::PreparedImage;
+use super::playback::{Animation, Position};
 use super::{CellSize, LoadError};
 
 mod diacritics;
@@ -67,7 +71,12 @@ fn take(counter: &AtomicU32, limit: u32) -> Option<u32> {
 pub(crate) struct LoadedImage {
     pub natural: (u32, u32),
     id: ImageId,
-    transmission: Mutex<Transmission>,
+    content: Content,
+}
+
+enum Content {
+    Still(Mutex<Transmission>),
+    Animated(Animation, Mutex<Playback>),
 }
 
 struct Transmission {
@@ -75,32 +84,221 @@ struct Transmission {
     placement: Option<CellSize>,
 }
 
+/// Two ids that take turns: the render draws one, and the next frame goes into the other.
+struct Playback {
+    back: ImageId,
+    /// Time since the first send, advanced by the clock of the component that loaded it.
+    time: Duration,
+    started: bool,
+    drawn: usize,
+    /// When the frame in each slot shows.
+    shows: [Option<Duration>; 2],
+    sizes: [Option<CellSize>; 2],
+}
+
 impl LoadedImage {
     pub(super) fn new(image: PreparedImage, level: ColorLevel) -> Result<Self, LoadError> {
+        let id = ImageId::allocate(level)?;
+        let content = match image.animation {
+            Some(animation) => match ImageId::allocate(level) {
+                Ok(back) => Content::Animated(animation, Mutex::new(Playback::new(back))),
+                // Without a second id the first frame shows as a still image.
+                Err(_) => Content::still(animation.frames.into_iter().next().expect("frame").png),
+            },
+            None => Content::still(image.png),
+        };
         Ok(Self {
             natural: image.natural,
-            id: ImageId::allocate(level)?,
-            transmission: Mutex::new(Transmission {
-                png: Some(image.png),
-                placement: None,
-            }),
+            id,
+            content,
         })
     }
 
-    fn send(&self, out: OutputWriter, size: CellSize) {
-        let mut transmission = self.transmission.lock().expect("image transmission");
-        if let Some(png) = transmission.png.take() {
-            transmit(&png, self.id.value, |command| {
-                out.write_passthrough(command)
-            });
+    /// Places the image; an animation draws the id that holds the frame due.
+    pub fn place(self: &Arc<Self>, size: CellSize) -> ImagePlacement {
+        let (id, slot, due) = match &self.content {
+            Content::Still(_) => (self.id, 0, None),
+            Content::Animated(animation, playback) => {
+                let playback = playback.lock().expect("image playback");
+                let slot = playback.due_slot();
+                let due = animation.position(playback.time);
+                (playback.id(self.id, slot), slot, Some(due))
+            }
+        };
+        ImagePlacement {
+            image: self.clone(),
+            size,
+            id,
+            slot,
+            due,
         }
-        if transmission.placement != Some(size) {
-            // A named placement replaces the old dimensions on resize.
-            out.write_passthrough(format!(
-                "\x1b_Ga=p,U=1,i={},p=1,c={},r={},q=2\x1b\\",
-                self.id.value, size.columns, size.rows
-            ));
-            transmission.placement = Some(size);
+    }
+
+    /// Sends what a committed placement needs; returns true when playback starts.
+    fn send(&self, out: OutputWriter, placement: &ImagePlacement) -> bool {
+        let size = placement.size;
+        match &self.content {
+            Content::Still(transmission) => {
+                let mut transmission = transmission.lock().expect("image transmission");
+                if let Some(png) = transmission.png.take() {
+                    transmit(&png, self.id.value, |command| {
+                        out.write_passthrough(command)
+                    });
+                }
+                if transmission.placement != Some(size) {
+                    // A named placement replaces the old dimensions on resize.
+                    send_placement(out, self.id, size);
+                    transmission.placement = Some(size);
+                }
+                false
+            }
+            Content::Animated(animation, playback) => {
+                let mut playback = playback.lock().expect("image playback");
+                let starting = !playback.started;
+                playback.started = true;
+                playback.drawn = placement.slot;
+                if playback.shows[placement.slot].is_none() {
+                    let png = &animation.frames[0].png;
+                    playback.upload(out, self.id, placement.slot, Duration::ZERO, png, size);
+                }
+                // Retransmitting an id deletes its placements, so frames go into the idle id.
+                let next = animation.following(placement.due.expect("animation position"));
+                let idle = 1 - placement.slot;
+                if Some(next.at) > playback.shows[placement.slot]
+                    && playback.shows[idle] != Some(next.at)
+                {
+                    let png = &animation.frames[next.frame].png;
+                    playback.upload(out, self.id, idle, next.at, png, size);
+                }
+                for slot in 0..2 {
+                    if playback.shows[slot].is_some() && playback.sizes[slot] != Some(size) {
+                        send_placement(out, playback.id(self.id, slot), size);
+                        playback.sizes[slot] = Some(size);
+                    }
+                }
+                starting
+            }
+        }
+    }
+
+    /// Deletes the data of an animation's idle id. The drawn id stays for the
+    /// placeholders the terminal keeps.
+    fn delete_idle(&self, out: OutputWriter) {
+        if let Content::Animated(_, playback) = &self.content {
+            let playback = playback.lock().expect("image playback");
+            let idle = 1 - playback.drawn;
+            if playback.shows[idle].is_some() {
+                out.write_passthrough(format!(
+                    "\x1b_Ga=d,d=I,i={},q=2\x1b\\",
+                    playback.id(self.id, idle).value
+                ));
+            }
+        }
+    }
+}
+
+impl Content {
+    fn still(png: Vec<u8>) -> Self {
+        Self::Still(Mutex::new(Transmission {
+            png: Some(png),
+            placement: None,
+        }))
+    }
+}
+
+impl Playback {
+    fn new(back: ImageId) -> Self {
+        Self {
+            back,
+            time: Duration::ZERO,
+            started: false,
+            drawn: 0,
+            shows: [None, None],
+            sizes: [None, None],
+        }
+    }
+
+    fn id(&self, front: ImageId, slot: usize) -> ImageId {
+        if slot == 0 { front } else { self.back }
+    }
+
+    /// The idle slot once its frame is due and newer than the drawn one, else the drawn slot.
+    fn due_slot(&self) -> usize {
+        let idle = 1 - self.drawn;
+        if self.shows[idle].is_some_and(|at| at <= self.time && Some(at) > self.shows[self.drawn]) {
+            idle
+        } else {
+            self.drawn
+        }
+    }
+
+    // The caller supplies the encoded frame, so frames from a decoder fit the same path.
+    fn upload(
+        &mut self,
+        out: OutputWriter,
+        front: ImageId,
+        slot: usize,
+        shows: Duration,
+        png: &[u8],
+        size: CellSize,
+    ) {
+        let id = self.id(front, slot);
+        transmit(png, id.value, |command| out.write_passthrough(command));
+        send_placement(out, id, size);
+        self.shows[slot] = Some(shows);
+        self.sizes[slot] = Some(size);
+    }
+}
+
+fn send_placement(out: OutputWriter, id: ImageId, size: CellSize) {
+    out.write_passthrough(format!(
+        "\x1b_Ga=p,U=1,i={},p=1,c={},r={},q=2\x1b\\",
+        id.value, size.columns, size.rows
+    ));
+}
+
+/// Advances started animations on one clock, no slower than their shortest delay.
+pub(super) fn use_playback(cx: &mut Scope, statuses: &[super::ImageStatus]) {
+    let animations: Vec<_> = statuses
+        .iter()
+        .filter_map(|status| match status {
+            super::ImageStatus::Ready(image) => match &image.content {
+                Content::Animated(animation, playback) => Some((animation, playback)),
+                Content::Still(_) => None,
+            },
+            _ => None,
+        })
+        .collect();
+    let interval = animations
+        .iter()
+        .filter_map(|(animation, playback)| {
+            let playback = playback.lock().expect("image playback");
+            let position = animation.position(playback.time);
+            // A finished animation that shows its last frame needs no clock.
+            let finished = position.ended && playback.shows[playback.drawn] == Some(position.at);
+            if !playback.started || finished {
+                return None;
+            }
+            animation.frames.iter().map(|frame| frame.delay).min()
+        })
+        .min();
+    let options = AnimationOptions {
+        active: interval.is_some(),
+        interval: interval
+            .unwrap_or(Duration::from_millis(100))
+            .max(Duration::from_millis(20)),
+    };
+    let clock = cx.use_animation(options);
+    // Changing the options restarts the clock at zero.
+    let previous = cx.use_memo((), || Rc::new(RefCell::new(None)));
+    let delta = match previous.replace(Some((options, clock.time))) {
+        Some((old, time)) if old == options => clock.time.saturating_sub(time),
+        _ => Duration::ZERO,
+    };
+    for (_, playback) in animations {
+        let mut playback = playback.lock().expect("image playback");
+        if playback.started {
+            playback.time += delta;
         }
     }
 }
@@ -110,6 +308,9 @@ impl LoadedImage {
 pub(crate) struct ImagePlacement {
     pub image: Arc<LoadedImage>,
     pub size: CellSize,
+    id: ImageId,
+    slot: usize,
+    due: Option<Position>,
 }
 
 /// Returns one styled text run per row, including one-row inline placements.
@@ -131,23 +332,42 @@ pub(crate) fn linked_placeholder_rows(placement: &ImagePlacement, link: Option<&
                 Some(url) => format!("\x1b]8;;{url}\x1b\\{text}\x1b]8;;\x1b\\"),
                 None => text,
             };
-            Text::new(text).color(placement.image.id.color)
+            Text::new(text).color(placement.id.color)
         })
         .collect()
 }
 
 /// Sends a render's images after commit; shared images retain transmission state.
+/// Unmounting deletes the idle ids of animations.
 pub(crate) fn use_image_effect(cx: &mut Scope, images: Vec<ImagePlacement>) {
     let out = cx.use_stdout();
+    let started = cx.use_state(|| 0_u64);
+    let sent = cx.use_memo((), || Rc::new(RefCell::new(Vec::new())));
     let dependencies: Vec<_> = images
         .iter()
-        .map(|placement| (placement.image.id.value, placement.size))
+        .map(|placement| (placement.id.value, placement.size, placement.due))
         .collect();
+    let latest = sent.clone();
     cx.use_effect(dependencies, move || {
-        for placement in images {
-            placement.image.send(out, placement.size);
+        for placement in &images {
+            if placement.image.send(out, placement) {
+                // A render after the first send starts the playback clock.
+                started.update(|count| *count += 1);
+            }
         }
+        *latest.borrow_mut() = images;
     });
+    cx.use_effect((), move || DeleteIdle(sent, out));
+}
+
+struct DeleteIdle(Rc<RefCell<Vec<ImagePlacement>>>, OutputWriter);
+
+impl Drop for DeleteIdle {
+    fn drop(&mut self) {
+        for placement in self.0.borrow().iter() {
+            placement.image.delete_idle(self.1);
+        }
+    }
 }
 
 fn transmit(png: &[u8], id: u32, mut write: impl FnMut(String)) {

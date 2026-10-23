@@ -55,6 +55,24 @@ fn png(width: u32, height: u32) -> Vec<u8> {
     bytes.into_inner()
 }
 
+fn gif() -> Vec<u8> {
+    let mut bytes = Vec::new();
+    {
+        let mut encoder = image::codecs::gif::GifEncoder::new(&mut bytes);
+        for red in [30, 90, 150] {
+            encoder
+                .encode_frame(image::Frame::from_parts(
+                    image::RgbaImage::from_pixel(20, 40, image::Rgba([red, 0, 0, 255])),
+                    0,
+                    0,
+                    image::Delay::from_numer_denom_ms(100, 1),
+                ))
+                .unwrap();
+        }
+    }
+    bytes
+}
+
 fn kitty(loaders: ImageLoaders) -> MarkdownImages {
     MarkdownImages::Kitty {
         loaders,
@@ -156,6 +174,33 @@ fn block_image_fits_cells_without_enlarging() {
     let frame = plain(&app.live_frame());
     assert_eq!(frame.lines().count(), 2);
     assert!(frame.lines().all(|line| line.matches(PIXEL).count() == 2));
+}
+
+#[test]
+fn document_animation_recolors_placeholder_rows() {
+    let (_, reply, loaders) = loader();
+    reply.send(gif()).unwrap();
+    let (mut app, terminal) = mounted(
+        component(
+            provider,
+            Document {
+                source: "before ![alt](image) after".into(),
+                loaders,
+                columns: 40,
+            },
+        ),
+        40,
+    );
+    app.input(KITTY);
+    wait(&mut app, |_| {
+        terminal.writes().concat().matches("a=t,t=d").count() == 2
+    });
+    let first = app.live_frame();
+    app.advance(Duration::from_millis(110));
+    let second = app.live_frame();
+    assert_ne!(first, second);
+    assert_eq!(plain(&first), plain(&second));
+    assert_eq!(terminal.writes().concat().matches("a=t,t=d").count(), 3);
 }
 
 #[test]
@@ -318,14 +363,14 @@ fn stream_view(cx: &mut Scope, _: &()) -> Element {
 #[test]
 fn static_piece_sends_image_data_once_after_placeholders() {
     let (loader, reply, loaders) = loader();
-    reply.send(png(20, 40)).unwrap();
+    reply.send(gif()).unwrap();
     let (mut app, terminal) = mounted(component(stream_provider, loaders.clone()), 40);
     app.advance(Duration::from_millis(30));
     assert_eq!(loader.calls.load(Ordering::SeqCst), 0);
     app.input(KITTY);
     wait(&mut app, |_| terminal.writes().concat().contains("a=t,t=d"));
     app.rerender(component(stream_provider, loaders));
-    app.advance(Duration::from_millis(30));
+    app.advance(Duration::from_millis(500));
     let writes = terminal.writes();
     assert_eq!(writes.concat().matches("a=t,t=d").count(), 1);
     assert_eq!(loader.calls.load(Ordering::SeqCst), 1);

@@ -16,6 +16,7 @@ struct Key {
     occurrence: usize,
     loader: Option<Arc<dyn ImageLoader>>,
     color_level: ColorLevel,
+    animate: bool,
 }
 
 impl PartialEq for Key {
@@ -23,6 +24,7 @@ impl PartialEq for Key {
         self.src == other.src
             && self.occurrence == other.occurrence
             && self.color_level == other.color_level
+            && self.animate == other.animate
             && same_loader(&self.loader, &other.loader)
     }
 }
@@ -79,6 +81,7 @@ pub(crate) fn use_images(cx: &mut Scope, requests: &[ImageRequest]) -> Vec<Image
                     loaders.local.clone()
                 },
                 color_level: request.color_level,
+                animate: request.animate,
             };
             *occurrence += 1;
             key
@@ -154,6 +157,7 @@ pub(crate) fn use_images(cx: &mut Scope, requests: &[ImageRequest]) -> Vec<Image
         });
     });
     cx.use_effect((), move || CancelLoads(entries));
+    super::protocol::use_playback(cx, &statuses);
     statuses
 }
 
@@ -222,6 +226,7 @@ mod tests {
                     cell_pixels: Some((10, 20)),
                 },
                 color_level: ColorLevel::TrueColor,
+                animate: true,
             }],
         );
         Text::new(match &states[0] {

@@ -10,6 +10,7 @@ mod decode;
 mod hook;
 mod load;
 mod loaders;
+mod playback;
 mod protocol;
 
 pub(crate) use decode::{CellSize, ImageLimits, size_in_cells};
@@ -25,8 +26,8 @@ pub use loaders::HttpLoader;
 pub(crate) use loaders::is_network;
 pub use loaders::{FileLoader, ImageLoader, ImageLoaders, LoadError};
 #[cfg(feature = "markdown-image")]
-pub(crate) use protocol::linked_placeholder_rows;
-pub(crate) use protocol::{ImagePlacement, LoadedImage, placeholder_rows, use_image_effect};
+pub(crate) use protocol::{ImagePlacement, linked_placeholder_rows};
+pub(crate) use protocol::{LoadedImage, placeholder_rows, use_image_effect};
 
 /// An image displayed with kitty placeholders, or `[alt]` when unavailable.
 #[derive(Clone, Default, PartialEq, Props)]
@@ -87,6 +88,7 @@ fn image(cx: &mut Scope, props: &Image) -> Element {
             src: props.src.clone(),
             limits,
             color_level: level,
+            animate: true,
         }]
     } else {
         Vec::new()
@@ -94,10 +96,7 @@ fn image(cx: &mut Scope, props: &Image) -> Element {
     let statuses = use_images(cx, &requests);
     let placement = match statuses.first() {
         Some(ImageStatus::Ready(image)) => {
-            size_in_cells(image.natural, limits).map(|size| ImagePlacement {
-                image: image.clone(),
-                size,
-            })
+            size_in_cells(image.natural, limits).map(|size| image.place(size))
         }
         _ => None,
     };

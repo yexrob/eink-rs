@@ -142,6 +142,85 @@ fn assert_alt(app: &TestApp, level: ColorLevel) {
 }
 
 #[test]
+fn animation_switches_ids_before_uploading_the_following_frame() {
+    for level in [ColorLevel::TrueColor, ColorLevel::Ansi256] {
+        let mut bytes = Vec::new();
+        {
+            let mut encoder = image::codecs::gif::GifEncoder::new(&mut bytes);
+            encoder
+                .set_repeat(image::codecs::gif::Repeat::Finite(1))
+                .unwrap();
+            for red in [30, 90, 150] {
+                encoder
+                    .encode_frame(image::Frame::from_parts(
+                        image::RgbaImage::from_pixel(10, 20, image::Rgba([red, 0, 0, 255])),
+                        0,
+                        0,
+                        image::Delay::from_numer_denom_ms(100, 1),
+                    ))
+                    .unwrap();
+            }
+        }
+        let (loader, reply) = loader();
+        reply.send(Ok(bytes)).unwrap();
+        let (mut app, terminal) = mounted(props(loader), level);
+        app.input(KITTY);
+        wait(&mut app, |_| commands(&terminal, "t").len() == 2);
+        let uploads = commands(&terminal, "t");
+        let first = image_id(&uploads[0]);
+        let second = image_id(&uploads[1]);
+        assert_ne!(first, second);
+        let frame = |id: u32| {
+            let color = if level == ColorLevel::Ansi256 {
+                Color::Ansi256(id as u8)
+            } else {
+                Color::Rgb((id >> 16) as u8, (id >> 8) as u8, id as u8)
+            };
+            render_with(
+                Text::new("\u{10eeee}\u{305}\u{305}").color(color),
+                RenderOptions {
+                    columns: 40,
+                    color_level: level,
+                },
+            )
+            .last_frame()
+            .to_owned()
+        };
+        assert_eq!(app.live_frame(), frame(first));
+        assert_eq!(commands(&terminal, "p").len(), 2);
+        let before = terminal.writes().len();
+        app.advance(Duration::from_millis(110));
+        assert_eq!(app.live_frame(), frame(second));
+        let uploads = commands(&terminal, "t");
+        assert_eq!(uploads.len(), 3);
+        assert_eq!(image_id(&uploads[2]), first);
+        assert_ne!(uploads[0], uploads[2]);
+        let writes = terminal.writes();
+        let writes = &writes[before..];
+        let switch = writes
+            .iter()
+            .position(|write| write.contains('\u{10eeee}'))
+            .unwrap();
+        let upload = writes
+            .iter()
+            .position(|write| write.contains("a=t,t=d"))
+            .unwrap();
+        assert!(switch < upload);
+        assert_eq!(commands(&terminal, "p").len(), 3);
+        app.advance(Duration::from_millis(100));
+        assert_eq!(app.live_frame(), frame(first));
+        app.advance(Duration::from_secs(1));
+        assert_eq!(app.live_frame(), frame(first));
+        assert_eq!(commands(&terminal, "t").len(), 3);
+        app.rerender(Text::new(""));
+        assert_eq!(
+            commands(&terminal, "d"),
+            [format!("\x1b_Ga=d,d=I,i={second},q=2\x1b\\")]
+        );
+    }
+}
+
+#[test]
 fn transmits_once_and_replaces_placement_on_resize() {
     let (loader, reply) = loader();
     reply.send(Ok(png(400, 200))).unwrap();

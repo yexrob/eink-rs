@@ -1,9 +1,20 @@
 use std::io::Cursor;
+use std::time::Duration;
 
-use image::{DynamicImage, ImageFormat, ImageReader, Limits};
+use image::codecs::{
+    gif::GifDecoder,
+    png::{CompressionType, FilterType, PngDecoder, PngEncoder},
+    webp::WebPDecoder,
+};
+use image::metadata::LoopCount;
+use image::{
+    AnimationDecoder, DynamicImage, Frames, ImageDecoder, ImageEncoder, ImageFormat, ImageReader,
+    Limits,
+};
 
 use super::LoadError;
 use super::loaders::check_length;
+use super::playback::{Animation, EncodedFrame};
 use super::protocol::DIACRITICS;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -97,17 +108,22 @@ fn pixel_size(natural: (u32, u32), limits: ImageLimits) -> Result<(u32, u32), Lo
 pub(super) struct PreparedImage {
     pub natural: (u32, u32),
     pub png: Vec<u8>,
+    pub animation: Option<Animation>,
+}
+
+fn decoder_limits() -> Limits {
+    let mut limits = Limits::default();
+    limits.max_image_width = Some(32_768);
+    limits.max_image_height = Some(32_768);
+    limits.max_alloc = Some(128 * 1024 * 1024);
+    limits
 }
 
 fn decode_raster(bytes: &[u8]) -> Result<DynamicImage, LoadError> {
     let mut reader = ImageReader::new(Cursor::new(bytes))
         .with_guessed_format()
         .map_err(LoadError::from)?;
-    let mut limits = Limits::default();
-    limits.max_image_width = Some(32_768);
-    limits.max_image_height = Some(32_768);
-    limits.max_alloc = Some(128 * 1024 * 1024);
-    reader.limits(limits);
+    reader.limits(decoder_limits());
     reader
         .decode()
         .map_err(|error| LoadError::new(error.to_string()))
@@ -121,11 +137,19 @@ fn png(image: DynamicImage) -> Result<Vec<u8>, LoadError> {
     Ok(bytes.into_inner())
 }
 
-pub(super) fn prepare(bytes: &[u8], limits: ImageLimits) -> Result<PreparedImage, LoadError> {
+pub(super) fn prepare(
+    bytes: &[u8],
+    limits: ImageLimits,
+    animate: bool,
+    expired: impl Fn() -> bool,
+) -> Result<PreparedImage, LoadError> {
     check_length(bytes)?;
     #[cfg(feature = "image-svg")]
     if image::guess_format(bytes).is_err() {
         return prepare_svg(bytes, limits);
+    }
+    if animate && let Some(prepared) = prepare_animation(bytes, limits, &expired)? {
+        return Ok(prepared);
     }
     let image = decode_raster(bytes)?;
     let natural = (image.width(), image.height());
@@ -138,7 +162,108 @@ pub(super) fn prepare(bytes: &[u8], limits: ImageLimits) -> Result<PreparedImage
     Ok(PreparedImage {
         natural,
         png: png(image)?,
+        animation: None,
     })
+}
+
+/// An animation's natural size, loop count and frames.
+type Animated<'a> = ((u32, u32), LoopCount, Frames<'a>);
+
+/// Streams the frames of an animated GIF, APNG or WebP; other images give `None`.
+fn animation_frames(bytes: &[u8]) -> image::ImageResult<Option<Animated<'_>>> {
+    let reader = Cursor::new(bytes);
+    Ok(match image::guess_format(bytes)? {
+        ImageFormat::Gif => {
+            let mut decoder = GifDecoder::new(reader)?;
+            decoder.set_limits(decoder_limits())?;
+            Some((
+                decoder.dimensions(),
+                decoder.loop_count(),
+                decoder.into_frames(),
+            ))
+        }
+        ImageFormat::Png => {
+            let decoder = PngDecoder::with_limits(reader, decoder_limits())?;
+            if !decoder.is_apng()? {
+                return Ok(None);
+            }
+            let natural = decoder.dimensions();
+            let decoder = decoder.apng()?;
+            Some((natural, decoder.loop_count(), decoder.into_frames()))
+        }
+        ImageFormat::WebP => {
+            let mut decoder = WebPDecoder::new(reader)?;
+            decoder.set_limits(decoder_limits())?;
+            if !decoder.has_animation() {
+                return Ok(None);
+            }
+            Some((
+                decoder.dimensions(),
+                decoder.loop_count(),
+                decoder.into_frames(),
+            ))
+        }
+        _ => None,
+    })
+}
+
+/// Encodes every frame at the display size. A single frame, or an animation
+/// past 1,000 frames or 32 MiB of PNG, gives `None` and shows as a still image.
+fn prepare_animation(
+    bytes: &[u8],
+    limits: ImageLimits,
+    expired: &impl Fn() -> bool,
+) -> Result<Option<PreparedImage>, LoadError> {
+    let decode_error = |error: image::ImageError| LoadError::new(error.to_string());
+    let Some((natural, loops, frames)) = animation_frames(bytes).map_err(decode_error)? else {
+        return Ok(None);
+    };
+    let (width, height) = pixel_size(natural, limits)?;
+    let mut encoded = Vec::new();
+    let mut total = 0;
+    for frame in frames {
+        if expired() {
+            return Err(LoadError::new("image load timed out"));
+        }
+        // Read past the cap to distinguish 1000 frames from a longer animation.
+        let frame = frame.map_err(decode_error)?;
+        if encoded.len() == 1000 {
+            return Ok(None);
+        }
+        // Browsers treat delays of 10 ms or less as 100 ms.
+        let delay = Duration::from(frame.delay());
+        let delay = if delay <= Duration::from_millis(10) {
+            Duration::from_millis(100)
+        } else {
+            delay
+        };
+        let pixels = DynamicImage::ImageRgba8(frame.into_buffer());
+        let pixels = if (width, height) == natural {
+            pixels
+        } else {
+            pixels.resize_exact(width, height, image::imageops::FilterType::Lanczos3)
+        };
+        let mut png = Vec::new();
+        PngEncoder::new_with_quality(&mut png, CompressionType::Fast, FilterType::Adaptive)
+            .write_image(pixels.as_bytes(), width, height, pixels.color().into())
+            .map_err(decode_error)?;
+        total += png.len();
+        if total > 32 * 1024 * 1024 {
+            return Ok(None);
+        }
+        encoded.push(EncodedFrame { png, delay });
+    }
+    if encoded.len() < 2 {
+        return Ok(None);
+    }
+    Ok(Some(PreparedImage {
+        natural,
+        png: Vec::new(),
+        animation: Some(Animation {
+            frames: encoded,
+            loops,
+        }),
+    }))
 }
 
 #[cfg(feature = "image-svg")]
@@ -197,6 +322,7 @@ fn prepare_svg(bytes: &[u8], limits: ImageLimits) -> Result<PreparedImage, LoadE
     );
     Ok(PreparedImage {
         natural,
+        animation: None,
         png: pixels
             .encode_png()
             .map_err(|error| LoadError::new(error.to_string()))?,
@@ -206,6 +332,57 @@ fn prepare_svg(bytes: &[u8], limits: ImageLimits) -> Result<PreparedImage, LoadE
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn gif_prepares_scaled_png_frames_and_normalizes_zero_delay() {
+        let mut bytes = Vec::new();
+        {
+            let mut encoder = image::codecs::gif::GifEncoder::new(&mut bytes);
+            encoder
+                .set_repeat(image::codecs::gif::Repeat::Finite(2))
+                .unwrap();
+            for (red, ms) in [(30, 40), (90, 0), (150, 60)] {
+                encoder
+                    .encode_frame(image::Frame::from_parts(
+                        image::RgbaImage::from_pixel(40, 20, image::Rgba([red, 0, 0, 255])),
+                        0,
+                        0,
+                        image::Delay::from_numer_denom_ms(ms, 1),
+                    ))
+                    .unwrap();
+            }
+        }
+        let limits = ImageLimits {
+            columns: 2,
+            rows: 20,
+            cell_pixels: Some((10, 20)),
+        };
+        let prepared = prepare(&bytes, limits, true, || false).unwrap();
+        assert_eq!(prepared.natural, (40, 20));
+        let animation = prepared.animation.unwrap();
+        assert!(
+            matches!(animation.loops, image::metadata::LoopCount::Finite(count) if count.get() == 2)
+        );
+        assert_eq!(animation.frames.len(), 3);
+        for (frame, (red, ms)) in animation
+            .frames
+            .iter()
+            .zip([(30, 40), (90, 100), (150, 60)])
+        {
+            assert_eq!(image::guess_format(&frame.png).unwrap(), ImageFormat::Png);
+            let pixels = image::load_from_memory(&frame.png).unwrap().to_rgba8();
+            assert_eq!(pixels.dimensions(), (20, 10));
+            assert_eq!(pixels.get_pixel(0, 0).0, [red, 0, 0, 255]);
+            assert_eq!(frame.delay, Duration::from_millis(ms));
+        }
+        assert!(
+            prepare(&bytes, limits, false, || false)
+                .unwrap()
+                .animation
+                .is_none()
+        );
+        assert!(prepare(&bytes, limits, true, || true).is_err());
+    }
 
     #[test]
     fn sizes_respect_caps_natural_dimensions_and_cell_ratio() {
@@ -289,6 +466,8 @@ mod tests {
                 rows: 20,
                 cell_pixels: Some((10, 20)),
             },
+            false,
+            || false,
         )
         .unwrap();
         assert_eq!(prepared.natural, (200, 100));
@@ -304,6 +483,8 @@ mod tests {
                 rows: 20,
                 cell_pixels: Some((10, 20)),
             },
+            false,
+            || false,
         )
         .unwrap();
         let image = image::load_from_memory(&prepared.png).unwrap();

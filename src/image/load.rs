@@ -20,6 +20,7 @@ pub(crate) struct ImageRequest {
     pub src: String,
     pub limits: ImageLimits,
     pub color_level: ColorLevel,
+    pub animate: bool,
 }
 
 type Completion = Box<dyn FnOnce(Arc<Job>, Result<Arc<LoadedImage>, LoadError>) + Send>;
@@ -77,7 +78,9 @@ pub(crate) fn start_load(request: ImageRequest, loader: Arc<dyn ImageLoader>, jo
                 if worker_job.expired() {
                     return Err(LoadError::new("image load timed out"));
                 }
-                let image = prepare(&bytes, request.limits)?;
+                let image = prepare(&bytes, request.limits, request.animate, || {
+                    worker_job.expired()
+                })?;
                 LoadedImage::new(image, request.color_level).map(Arc::new)
             }))
             .unwrap_or_else(|_| Err(LoadError::new("image loader panicked")));

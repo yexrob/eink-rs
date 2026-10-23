@@ -65,10 +65,7 @@ impl Images {
         } else {
             size_in_cells(image.natural, limits)?
         };
-        let placement = ImagePlacement {
-            image: image.clone(),
-            size,
-        };
+        let placement = image.place(size);
         self.placements.push(placement.clone());
         self.indexed.resize(self.statuses.len(), None);
         self.indexed[index] = Some((placement.clone(), inline));
@@ -98,6 +95,7 @@ pub(crate) fn requests(
                     cell_pixels,
                 },
                 color_level,
+                animate: true,
             }),
             _ => None,
         })
@@ -276,6 +274,7 @@ impl StreamImages {
         waiting.started = self.time;
         waiting.images.cell_pixels = *cell_pixels;
         for (index, request) in waiting.requests.iter_mut().enumerate() {
+            request.animate = false;
             request.limits.cell_pixels = *cell_pixels;
             request.color_level = *color_level;
             let ImageLoaders { local, network } = loaders;
