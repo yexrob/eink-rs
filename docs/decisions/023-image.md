@@ -1,8 +1,8 @@
 # 图片：`Image` 组件、加载器和 Markdown 接入
 
 - 日期：2026-10-22
-- 状态：实施中
-- 提交：无
+- 状态：已实施
+- 提交：`90ab7c0` feat(image): add an Image component drawn with kitty placeholders；`4930387` feat(markdown): show images in documents and streams；`0763dbf` fix(markdown): drop the space before text that resumes below an image；`e09acc6` feat(markdown): enlarge inline images to the row's height
 - Brief：[image-component](briefs/image-component.md)、[image-markdown](briefs/image-markdown.md)
 
 ## 背景
@@ -71,3 +71,16 @@
 2. **Markdown 接入**，brief 见 [image-markdown](briefs/image-markdown.md)（020 占用了 `markdown-image.md` 这个名字）：渲染器的块、行内和拆段；`Markdown` 组件的加载；流里的段等探测和加载；宽度的测量。
 
 主 agent 集成：review，按逻辑改动分次提交；全量测试和 clippy；`docs/design.md` 加图片一节；在 Ghostty 直连、tmux 和 herdr 里看 README 和含图片的流式回答；补本记录的结果，删 worktree。
+
+## 结果
+
+- 提交顺序（rebase 到 0.3.0 之后的 main）：`90ab7c0` 第一步；`271d8ff` 第二步的计划；`4930387` 第二步；`896cf1c` `docs/design.md` 的图片一节和 README；`0763dbf` 拆段之后的空格；`0498751` 行内图片放大的决策；`e09acc6` 行内图片放大到一行高。第二步合成一个提交，没有按方案分次提交。
+- 主 agent review 第二步时改了三处：`Images::place` 用 `ImageLimits` 和 `rows_at_width` 算尺寸，去掉重复的 1:2 退路和 297 上限；`render_document` 的两种 feature 写成两个循环，去掉条件编译的迭代器；段落结束时按子节点的个数放入 0 个、1 个或一列，去掉每段的包装 `View`。
+- Codex 偏离 brief 的一处：`linked_placeholder_rows` 把行内图片的占位符包在 OSC 8 里，带链接的图片可以点击。主 agent 保留。
+- 分支 rebase 到 0.3.0 的 main，依赖 crates.io 的 ink-rs 0.1.7，去掉 `[patch.crates-io]`。新依赖的 `rust-version` 都不超过 1.88。
+- 测试：`tests/image.rs` 5 个、`tests/markdown_image.rs` 9 个，单元测试 4 个。全量：fmt；clippy 的 `--workspace --all-features`、无 feature、`markdown`、`markdown-image`、`image`、`image-svg` 六组；`--workspace --all-features` 197 个、`--workspace` 无 feature 175 个、`--features markdown --test markdown` 3 个测试通过。
+- 终端核对：没有终端连着的 tmux 窗口里，探测得不到回答，三张图显示 `[alt]`。用户在 Ghostty 直连里看了 `image` 示例和一篇含块图片、行内图片、带链接的徽章、拆段的高图、列表里的 SVG、表格和缺失文件的 Markdown 流，指出两处：
+  - 高图拆开段落后，下一行开头有一个空格：图片后面的空格留在了这一行。`0763dbf` 去掉块图片下面接着的文字开头的空白；`tall_inline_image_splits_the_paragraph` 的断言从 `trim()` 改为 `trim_end()`，改前的代码在这个断言上失败。
+  - 带链接的徽章「展示的太扁了」：见决策一节的最后两条。`small_inline_image_keeps_text_and_link_on_one_row` 换成 30×10 的图片，断言 6 格，改前的代码给出 3 格。
+  - 改后用户回复「可以了 发布吧」。tmux 和 herdr 里的核对没有单独的结果。
+- 视频和动图留给新的记录。发布见 [031](031-release-0-3-1.md)。
