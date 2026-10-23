@@ -1,8 +1,8 @@
 # Select 行的标记不随长标签收缩
 
 - 日期：2026-10-23
-- 状态：实施中
-- 提交：无
+- 状态：已实施
+- 提交：`b43948b` fix(ui): keep option row markers from shrinking beside long labels
 - Brief：无，主 agent 自己做
 
 ## 背景
@@ -23,3 +23,9 @@ bingo-refactor 会话转来一个问题（对方说用户同意转来）：Selec
 ## 方案
 
 主 agent 自己做：改 `src/ui/option_list.rs`，在 `tests/select.rs` 加测试；fmt、clippy、`--workspace --all-features` 的全量测试。完成后告诉 bingo-refactor 会话；发版由用户定。
+
+## 结果
+
+- 提交 `b43948b`。改之前新测试失败，画成 `❯1.` 和 `2.Deny`；改之后的输出和 Ink 8.0.0 逐字相同。
+- fmt，无 feature 和全部 feature 的 clippy，`--workspace --all-features` 的全量测试（216 个）通过。
+- 修复在 eink-rs 的 main 上，没有推送、没有发版；bingo 要用到它，需要 eink-rs 发新版本。
