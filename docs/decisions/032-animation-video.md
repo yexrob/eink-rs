@@ -3,7 +3,7 @@
 - 日期：2026-10-23
 - 状态：实施中
 - 提交：无
-- Brief：[animation-terminal](briefs/animation-terminal.md)、[animation-decoding](briefs/animation-decoding.md)、[animation-image](briefs/animation-image.md)、[video-decoder](briefs/video-decoder.md)
+- Brief：[animation-terminal](briefs/animation-terminal.md)、[animation-decoding](briefs/animation-decoding.md)、[animation-image](briefs/animation-image.md)、[video-decoder](briefs/video-decoder.md)、[video-component](briefs/video-component.md)
 
 ## 背景
 
@@ -54,6 +54,18 @@
   - 帧队列（crate 内部）：后台线程把原始帧编成 PNG，带上在视频里的时间，排 3 帧，满了阻塞。跳转和循环开新的流，帧带流的代号，旧代号的帧不交出。取帧不阻塞，拿时间到了的帧里靠后的那一帧，之前的丢掉。
   - 本地实现：测试定义自己的解码器，和图片的测试加载器一样；第二半的示例定义一个生成测试图样的解码器，给没装 ffmpeg 的机器用。不加公开的 mock。
 
+- 动图合入后，用户在自己的终端里看了动图和徽章，说「没问题了」。Claude 定组件这一半的细节：
+  - 模型和视图分开。`use_video_player(cx, VideoOptions)` 持有模型：读 `VideoDecoders`，在工作线程上调 `info`，算帧的尺寸和帧率，持有 `FrameFeed`，跑时钟，记位置、状态和错误。它返回 `VideoPlayer` 句柄：`play`、`pause`、`seek`，读状态、位置和时长。`Video { player, alt }` 是视图：两个 id、占位符、上传，卸载时删掉空闲 id。
+  - 调用这个 hook 的组件在播放时按帧率重绘；ink-rs 没有按属性跳过重绘，它的子树在同一次渲染里重绘。文档建议把播放器放在小组件里。备选是时钟放在 `Video` 里：父组件读不到实时的位置，和「播放器句柄」的选择不符。
+  - 循环由 `VideoOptions::looping` 控制，句柄上不加对应的方法。
+  - 帧的尺寸：保持视频的宽高比，不超过单元格的像素，不超过视频本身，像素数不超过 `max_pixels`（默认 640×360）。帧率取 `max_fps`（默认 24）和视频帧率里小的那个；`VideoInfo` 加 `fps`，取 ffprobe 的 `avg_frame_rate`，向上取整。
+  - 时钟：一个 `use_animation`，间隔是帧间隔，在播放、加载、等新流的第一帧时运行。每条新流（开始、跳转、循环、尺寸变化）的位置停在起点，第一帧到达后开始走，进程启动的 70 到 150 ms 不丢帧。流中间迟到的帧按解码这一半的规则丢掉。
+  - 取帧：hook 在 layout effect 里按位置取帧，给帧一个不重复的序号；视图在同一次提交的 effect 里把帧传进空闲 id。ink-rs 的 layout effect 在 effect 之前运行。视图画装着当前流里最新那一帧的 id；跳转或循环之前传进去的帧不显示。帧在取到之后的下一个时钟周期显示，晚一个帧间隔，换来一条简单的规则。
+  - 两个 id 的部分从 `Playback` 里抽成一个类型，动图和视频共用：id 对、画着的槽、带放置的上传、尺寸变化时重发放置、删除空闲 id。选哪个槽的规则留在动图和视频自己的代码里。
+  - 状态：`Loading`、`Playing`、`Paused`、`Ended`、`Failed(LoadError)`。探测中是 `Loading`；终端不支持图形、槽空着、`info` 超时（本地 5 秒、网络 10 秒，和图片一致）、解码出错是 `Failed`。`Loading` 和 `Failed` 显示 `[alt]`，样式取 `ImageTheme`。播完停在最后一帧，`play` 从头播。
+  - 示例 `examples/video.rs`：空格播放和暂停，左右方向键跳 5 秒，`l` 切换循环，`q` 退出，状态行显示位置和时长；`--pattern` 用示例里的测试图样解码器。
+  - 去掉 `feed` 和 `decoder` 上的 `dead_code` 豁免。
+
 ## 调研要点
 
 报告在 scratchpad 的 `research/animation/terminal.md` 和 `decoding.md`。
@@ -91,7 +103,7 @@
 2. **第一步，动图**，brief 见 [animation-image](briefs/animation-image.md)：一个 Codex worker（`codex exec -s workspace-write`），工作目录是 scratchpad 里基于 main 的 worktree。它不提交，不改文档，跑 fmt、clippy 和 brief 列出的测试。主 agent review、提交、跑全量测试，在 tmux 里核对，`docs/design.md` 的图片一节补动图，请用户在 Ghostty 和 herdr 里看。
 3. **第二步，视频**：
    - 解码这一半，brief 见 [video-decoder](briefs/video-decoder.md)：一个 Codex worker，和第一步并行，用自己的 worktree。它不改 `src/image/` 和 `src/markdown/`，够得着现有的项需要的改动除外，在报告里列出。
-   - 组件这一半：动图合入、用户看过之后，主 agent 补细节和 brief，派一个 Codex worker。
+   - 组件这一半：动图合入、用户看过之后，主 agent 补细节和 brief，派一个 Codex worker。brief 见 [video-component](briefs/video-component.md)，用基于 main 的 worktree。主 agent review、提交、跑全量测试，`docs/design.md` 的 video 一节补组件，请用户用 `examples/video.rs` 看。
 4. 版本号和发版在两步合入后商定。
 
 ## 结果
@@ -101,6 +113,7 @@
   - worker 认为 ink-rs 在卸载时丢掉 cleanup 的写入，没做空闲 id 的删除。核对 ink-rs 0.1.7：`begin_unmount` 在应用退出时设 `unmounting`，组件卸载时不设。补上 `a=d,d=I`，测试改成卸掉组件，断言删除的是空闲 id。
   - 解码合成一个循环：单帧、超过 1000 帧或 32 MiB 时返回 `None`，走静图的路。延迟用 `Duration::from(Delay)` 换算。
   - tmux 会话没有接终端，探测拿不到 kitty 的回答，示例显示 `[alt]`。图形请用户在 Ghostty 和 herdr 里看，`Markdown` 组件用一个不入库的读文件示例看。
+  - 用户看了，说徽章不动。原因在测试文件：徽章 GIF 的十帧相同。换成色相旋转的十帧后，用户说「没问题了」。
 - 第二步的解码这一半：4809b59。review 的改动：
   - 去掉帧上的代号字段：seek 清空队列，队列里的帧属于当前代号。
   - `VideoDecoders::decoder` 改成 crate 内部，公开的 API 和 `ImageLoaders` 对齐。
