@@ -284,7 +284,11 @@ impl Model {
             _ => Duration::ZERO,
         };
         self.tick += 1;
-        self.pending_paint = false;
+        // A restarted clock ticks with a zero delta, which can come before the
+        // view uploads the polled frame; the paint tick waits for a real period.
+        if !delta.is_zero() {
+            self.pending_paint = false;
+        }
         if self.status == VideoStatus::Loading {
             self.loading += delta;
             if self
