@@ -3,7 +3,7 @@
 - 日期：2026-10-23
 - 状态：实施中
 - 提交：无
-- Brief：[animation-terminal](briefs/animation-terminal.md)、[animation-decoding](briefs/animation-decoding.md)、[animation-image](briefs/animation-image.md)
+- Brief：[animation-terminal](briefs/animation-terminal.md)、[animation-decoding](briefs/animation-decoding.md)、[animation-image](briefs/animation-image.md)、[video-decoder](briefs/video-decoder.md)
 
 ## 背景
 
@@ -46,6 +46,13 @@
   - 两个槽按地址区分，经 `Scope::provide` 提供，使用者可以替换。两个槽的默认实现是 ffmpeg：本地路径相对基目录；网址交给 ffmpeg，它按 HTTP Range 分段读。
   - 解码线程收原始帧、编成 PNG，排 2 到 3 帧的队；渲染一侧按时钟取帧，迟到的帧丢掉。送出的像素不超过 640×360，帧率上限 24，属性可以改；传输沿用动图的两个 id 轮换。
   - 暂停时停止读管道，ffmpeg 被管道挡住；跳转和循环开新进程。
+- 第一步派出后，用户问「视频的呢」。Claude 定：视频拆成两半。解码这一半不依赖动图的发送路径，和动图并行派；组件这一半（`Video` 组件、播放器句柄、发送）用动图的两个 id 轮换，等动图合入、用户看过之后派。解码这一半的细节：
+  - `video = ["image"]`，PNG 编码用 `image`。
+  - 没有提供者时，两个槽是 `FfmpegDecoder`。网络视频不加依赖，没有自己的 feature；应用提供 `network: None` 关掉它。
+  - 本地地址写成 `file:<路径>`，加 `-protocol_whitelist file`：地址不能被当成选项，不能选别的 ffmpeg 协议（`concat:`、`subfile:`、指向别处的播放列表）。网络地址限于 `http://` 和 `https://`，白名单是 `http,https,tcp,tls,crypto`，`-rw_timeout` 10 秒，和图片的网络期限一致。
+  - ffprobe 报的旋转为 ±90 或 270 度时交换宽高：ffmpeg 默认按旋转输出帧。
+  - 帧队列（crate 内部）：后台线程把原始帧编成 PNG，带上在视频里的时间，排 3 帧，满了阻塞。跳转和循环开新的流，帧带流的代号，旧代号的帧不交出。取帧不阻塞，拿时间到了的帧里靠后的那一帧，之前的丢掉。
+  - 本地实现：测试定义自己的解码器，和图片的测试加载器一样；第二半的示例定义一个生成测试图样的解码器，给没装 ffmpeg 的机器用。不加公开的 mock。
 
 ## 调研要点
 
@@ -82,5 +89,7 @@
    - 解码一侧，brief 见 [animation-decoding](briefs/animation-decoding.md)：`image` 0.25 的动图 API；视频解码的几条路（ffmpeg 命令行、ffmpeg-next、GStreamer、纯 Rust 或内置的解码器）的平台、许可证、MSRV 和 `unsafe`；每帧缩放和编码的耗时与字节数（实测）；播放器的节拍和音频；动图的内存。
    - 两个 Sonnet 子 agent 写报告，不改仓库。要点见「调研要点」。
 2. **第一步，动图**，brief 见 [animation-image](briefs/animation-image.md)：一个 Codex worker（`codex exec -s workspace-write`），工作目录是 scratchpad 里基于 main 的 worktree。它不提交，不改文档，跑 fmt、clippy 和 brief 列出的测试。主 agent review、提交、跑全量测试，在 tmux 里核对，`docs/design.md` 的图片一节补动图，请用户在 Ghostty 和 herdr 里看。
-3. **第二步，视频**：用户看过动图后，主 agent 补视频的细节和 brief，派一个 Codex worker。
+3. **第二步，视频**：
+   - 解码这一半，brief 见 [video-decoder](briefs/video-decoder.md)：一个 Codex worker，和第一步并行，用自己的 worktree。它不改 `src/image/` 和 `src/markdown/`，够得着现有的项需要的改动除外，在报告里列出。
+   - 组件这一半：动图合入、用户看过之后，主 agent 补细节和 brief，派一个 Codex worker。
 4. 版本号和发版在两步合入后商定。
