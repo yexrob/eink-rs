@@ -90,7 +90,7 @@ fn ready(feed: &FrameFeed, count: usize) {
 #[test]
 fn frame_times_png_queue_bound_and_late_frame_skipping() {
     let decoder = Arc::new(TestDecoder {
-        count: 20,
+        count: 40,
         ..Default::default()
     });
     let feed = FrameFeed::new(decoder.clone(), "test".into(), request(), false).unwrap();
@@ -108,6 +108,12 @@ fn frame_times_png_queue_bound_and_late_frame_skipping() {
     let image = image::load_from_memory(&frame.png).unwrap().into_rgb8();
     assert_eq!(image.dimensions(), (2, 1));
     assert_eq!(image.into_raw(), vec![42; 6]);
+    // A consumer that falls behind makes the worker skip the frames it would drop.
+    ready(&feed, 3);
+    feed.poll(Duration::from_secs(3));
+    ready(&feed, 3);
+    let update = feed.poll(Duration::from_secs(3));
+    assert_eq!(update.frame.unwrap().time, Duration::from_secs(3));
     let mut fractional = request();
     fractional.fps = 3;
     assert_eq!(frame_time(&fractional, 3).unwrap(), Duration::from_secs(2));

@@ -30,6 +30,8 @@ struct State {
     request: FrameRequest,
     generation: u64,
     ready: VecDeque<TimedFrame>,
+    /// The consumer's last polled position.
+    position: Duration,
     end: Option<Duration>,
     error: Option<LoadError>,
     looping: bool,
@@ -40,6 +42,7 @@ impl State {
     fn restart(&mut self, start: Duration) {
         self.generation += 1;
         self.request.start = start;
+        self.position = start;
         self.ready.clear();
         self.end = None;
         self.error = None;
@@ -69,6 +72,7 @@ impl FrameFeed {
         request.frame_bytes()?;
         let shared = Arc::new(Shared {
             state: Mutex::new(State {
+                position: request.start,
                 request,
                 generation: 0,
                 ready: VecDeque::with_capacity(3),
@@ -104,6 +108,7 @@ impl FrameFeed {
     /// The caller resets its clock to `start` when the returned generation changes.
     pub fn poll(&self, position: Duration) -> FeedUpdate {
         let mut state = self.shared.state.lock().expect("video feed");
+        state.position = position;
         let mut frame = None;
         while state
             .ready
@@ -179,7 +184,11 @@ fn decode(
     let mut frames = decoder.frames(src, request)?;
     let mut index = 0_u64;
     loop {
-        {
+        let time = frame_time(request, index)?;
+        let next = index
+            .checked_add(1)
+            .ok_or_else(|| LoadError::new("video frame index overflows"))?;
+        let late = {
             let mut state = shared.state.lock().expect("video feed");
             while !state.stopped && state.generation == generation && state.ready.len() == 3 {
                 state = shared.changed.wait(state).expect("video feed");
@@ -187,12 +196,15 @@ fn decode(
             if state.stopped || state.generation != generation {
                 return Ok(());
             }
+            // Polling takes the newest due frame, so a frame whose successor is due never shows.
+            frame_time(request, next)? <= state.position
+        };
+        let frame = frames.next().transpose()?;
+        if late && frame.is_some() {
+            index = next;
+            continue;
         }
-        let time = frame_time(request, index)?;
-        let frame = frames
-            .next()
-            .map(|frame| frame.and_then(|rgb| encode(&rgb, request)))
-            .transpose()?;
+        let frame = frame.map(|rgb| encode(&rgb, request)).transpose()?;
         let mut state = shared.state.lock().expect("video feed");
         if state.stopped || state.generation != generation {
             return Ok(());
@@ -207,9 +219,7 @@ fn decode(
             return Ok(());
         };
         state.ready.push_back(TimedFrame { time, png });
-        index = index
-            .checked_add(1)
-            .ok_or_else(|| LoadError::new("video frame index overflows"))?;
+        index = next;
     }
 }
 
